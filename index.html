@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tirenify | Email Breach Check</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+  <div class="brand">Tirenify</div>
+
+  <h1>Check if your email has been exposed</h1>
+  <p class="subtitle">
+    Find out whether your email has appeared in known data breaches.
+  </p>
+
+  <form id="breach-form" class="breach-form">
+    <label for="email">Email address</label>
+    <input
+      type="email"
+      id="email"
+      name="email"
+      placeholder="Enter your email address"
+      required
+    />
+    <p class="trust-note">
+  Enter an email to run a breach exposure check
+</p>
+    <button type="submit">Check Exposure</button>
+  </form>
+
+  <div id="result" class="result">
+    <p>Your breach results will appear here.</p>
+  </div>
+  <p class="footer-text">Protecting individuals in the digital world.</p>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
