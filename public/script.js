@@ -57,6 +57,50 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="toggle-container">
             ${breachCount > 20 ? `<button id="toggleBtn">Show More</button>` : ""}
           </div>
+          <div class="what-now">
+            <p class="what-now-title">What now?</p>
+            <p class="what-now-intro">Your email was found in known data breaches. Here is what to do right now.</p>
+
+            <div class="action-step">
+              <span class="step-num">1</span>
+              <div>
+                <strong>Change your password on every affected site</strong>
+                <p>Go to each site listed above and change your password immediately. Use a different password for each — never reuse the same one.</p>
+              </div>
+            </div>
+
+            <div class="action-step">
+              <span class="step-num">2</span>
+              <div>
+                <strong>Enable two-factor authentication (2FA)</strong>
+                <p>Even if an attacker has your password, 2FA stops them from accessing your account without your second factor. Turn it on everywhere you can.</p>
+              </div>
+            </div>
+
+            <div class="action-step">
+              <span class="step-num">3</span>
+              <div>
+                <strong>Check every account linked to this email</strong>
+                <p>Any account that uses this email as login is at risk. Check your bank, social media, and shopping accounts — anywhere this email is registered.</p>
+              </div>
+            </div>
+
+            <div class="action-step">
+              <span class="step-num">4</span>
+              <div>
+                <strong>Watch for suspicious activity</strong>
+                <p>Monitor your inbox for unexpected password reset requests or login alerts. If you receive one you did not request, act immediately.</p>
+              </div>
+            </div>
+
+            <div class="action-step">
+              <span class="step-num">5</span>
+              <div>
+                <strong>Check your other email addresses too</strong>
+                <p>Most people have more than one email. Each one may have different exposure — run a check on every address you use.</p>
+              </div>
+            </div>
+          </div>
         `;
 
         resultBox.innerHTML = breachHTML;
@@ -81,7 +125,49 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (data.Error === "Not found") {
         resultBox.className = "result success";
         resultBox.innerHTML = `
-          <p><strong>No known exposure found.</strong> This email was not found in our breach database.</p>
+          <div class="no-breach-header">
+            <span class="no-breach-icon">✓</span>
+            <strong>Good news — no breaches found</strong>
+          </div>
+          <p class="no-breach-body">
+            Your email does not appear in any known public breach records we checked.
+            That is a good result. But staying safe means staying aware.
+          </p>
+          <div class="what-now">
+            <p class="what-now-title">Keep it that way — do this now</p>
+
+            <div class="action-step">
+              <span class="step-num">1</span>
+              <div>
+                <strong>Enable two-factor authentication (2FA)</strong>
+                <p>Even without a breach, 2FA is the single most effective step you can take. Enable it on every account — especially email, banking, and social media.</p>
+              </div>
+            </div>
+
+            <div class="action-step">
+              <span class="step-num">2</span>
+              <div>
+                <strong>Use a unique password for every account</strong>
+                <p>If you reuse the same password across multiple sites, one breach anywhere puts all your accounts at risk. A password manager makes this easy.</p>
+              </div>
+            </div>
+
+            <div class="action-step">
+              <span class="step-num">3</span>
+              <div>
+                <strong>Check your other email addresses</strong>
+                <p>A clean result for one address does not mean all your emails are safe. Run a check on every address you use regularly.</p>
+              </div>
+            </div>
+
+            <div class="action-step">
+              <span class="step-num">4</span>
+              <div>
+                <strong>Stay aware</strong>
+                <p>New breaches are discovered constantly. Check back regularly — especially after hearing about a major data breach in the news.</p>
+              </div>
+            </div>
+          </div>
         `;
       } else if (data.message) {
         resultBox.className = "result error";

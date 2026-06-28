@@ -90,7 +90,6 @@ button {
   margin-top: 6px;
   border: none;
   border-radius: 12px;
-  background: #111827;
   color: #ffffff;
   font-size: 1rem;
   font-weight: 700;
@@ -99,9 +98,18 @@ button {
   box-shadow: 0 0 0 rgba(59, 130, 246, 0);
 }
 
-button:hover {
+button[type="submit"] {
+  background: linear-gradient(135deg, #1d4ed8, #2563eb);
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+button[type="submit"]:hover {
+  background: linear-gradient(135deg, #1e40af, #1d4ed8);
   transform: translateY(-1px);
-  box-shadow: 0 0 18px rgba(59, 130, 246, 0.28);
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.35);
 }
 
 button:active {
@@ -379,4 +387,130 @@ button:active {
   font-size: 0.95rem;
   font-weight: 500;
   white-space: nowrap;
+}
+
+/* No breach header */
+.no-breach-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 1.05rem;
+  color: #f8fafc;
+}
+
+.no-breach-icon {
+  font-size: 1.5rem;
+  color: #22c55e;
+  font-weight: 700;
+}
+
+.no-breach-body {
+  font-size: 0.95rem;
+  color: #cbd5e1;
+  line-height: 1.65;
+  margin-bottom: 24px;
+}
+
+/* What Now section */
+.what-now {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.what-now-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 6px;
+}
+
+.what-now-intro {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+/* Action steps */
+.action-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.step-num {
+  min-width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.action-step strong {
+  display: block;
+  font-size: 0.95rem;
+  color: #f1f5f9;
+  margin-bottom: 4px;
+}
+
+.action-step p {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* Twitter/X social link */
+.social-link {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.social-link a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #94a3b8;
+  font-size: 0.88rem;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.social-link a:hover {
+  color: #f1f5f9;
+}
+
+.social-link svg {
+  flex-shrink: 0;
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+  .action-step {
+    gap: 10px;
+  }
+
+  .step-num {
+    min-width: 24px;
+    height: 24px;
+    font-size: 0.75rem;
+  }
+
+  .action-step strong {
+    font-size: 0.9rem;
+  }
+
+  .action-step p {
+    font-size: 0.85rem;
+  }
 }
