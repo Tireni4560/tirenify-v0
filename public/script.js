@@ -209,18 +209,23 @@ function showEmailOptIn(checkedEmail, resultBox) {
   });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const form = document.getElementById("breachForm");
-  const emailInput = document.getElementById("email");
-  const resultBox = document.getElementById("result");
+const form = document.getElementById("breachForm");
+const emailInput = document.getElementById("email");
+const resultBox = document.getElementById("result");
 
+if (form && emailInput && resultBox) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    e.stopPropagation();
     const email = emailInput.value.trim();
+    const preservedEmail = emailInput.value;
 
     // Reset the search page state for every fresh breach check.
     const existingOptIn = document.getElementById("emailOptIn");
     if (existingOptIn) existingOptIn.remove();
+
+    // Keep the entered email visible throughout the loading sequence.
+    emailInput.value = preservedEmail;
 
     // Pick 2 random messages from list 1, 1 from list 2
     const msg1 = getRandomMessage(loadingMessagesGeneral);
@@ -272,4 +277,4 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
   });
-});
+}
