@@ -221,7 +221,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Reset the search page state for every fresh breach check.
     const existingOptIn = document.getElementById("emailOptIn");
     if (existingOptIn) existingOptIn.remove();
-    emailInput.value = "";
 
     // Pick 2 random messages from list 1, 1 from list 2
     const msg1 = getRandomMessage(loadingMessagesGeneral);
