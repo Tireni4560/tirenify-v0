@@ -232,10 +232,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const msg3 = getRandomMessage(loadingMessagesCompletion);
     const messages = [msg1, msg2, msg3];
 
-    // Hide opt-in form if visible from a previous check
-    const existingOptIn = document.getElementById("emailOptIn");
-    if (existingOptIn) existingOptIn.remove();
-
     // Start loading UI immediately
     resultBox.className = "result loading";
     resultBox.innerHTML = `
