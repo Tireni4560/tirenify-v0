@@ -242,7 +242,7 @@ button[type="submit"]:active {
   border: 2px solid rgba(148, 163, 184, 0.2);
   border-top: 2px solid #60a5fa;
   border-radius: 50%;
-  animation: spin 0.7s linear infinite;
+  animation: spin 1.2s linear infinite;
   flex-shrink: 0;
 }
 
@@ -398,6 +398,150 @@ button[type="submit"]:active {
   transition: color 0.2s ease;
 }
 
+/* Email opt-in container */
+.email-opt-in {
+  margin-top: 20px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(96, 165, 250, 0.20);
+  overflow: hidden;
+}
+
+.opt-in-inner {
+  padding: 24px;
+}
+
+.opt-in-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 6px;
+}
+
+.opt-in-body {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  line-height: 1.6;
+  margin-bottom: 18px;
+}
+
+#optInEmail {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 0.95rem;
+  outline: none;
+  margin-bottom: 12px;
+  transition: border-color 0.2s ease;
+}
+
+#optInEmail:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.opt-in-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+#optInSkip {
+  flex: 1;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: transparent;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#optInSkip:hover {
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #94a3b8;
+}
+
+#optInSubmit {
+  flex: 2;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(10, 15, 30, 0.75);
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: all 0.25s ease;
+}
+
+#optInSubmit:hover {
+  background: rgba(20, 28, 50, 0.85);
+  border-color: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+#optInSubmit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.opt-in-disclaimer {
+  font-size: 0.78rem;
+  color: #475569;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* Success and error states */
+.opt-in-success {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 10px;
+  background: rgba(20, 83, 45, 0.25);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #86efac;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.opt-in-check {
+  font-size: 1.2rem;
+  color: #22c55e;
+  flex-shrink: 0;
+}
+
+.opt-in-error {
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  font-size: 0.88rem;
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .opt-in-actions {
+    flex-direction: column;
+  }
+
+  #optInSkip,
+  #optInSubmit {
+    flex: none;
+    width: 100%;
+  }
+}
+
 .social-link a:hover {
   color: #94a3b8;
 }
@@ -438,4 +582,58 @@ button[type="submit"]:active {
   .tirenify-cta {
     padding: 16px;
   }
+}
+
+/* Collapsible "What Now" section */
+.what-now-collapsible {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.10);
+}
+
+.what-now-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #f8fafc;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  letter-spacing: 0.01em;
+}
+
+.what-now-toggle:hover {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(96, 165, 250, 0.25);
+}
+
+.toggle-icon {
+  font-size: 0.8rem;
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.what-now-toggle.open .toggle-icon {
+  transform: rotate(180deg);
+}
+
+.what-now-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+  margin-top: 0;
+}
+
+.what-now-content.open {
+  max-height: 1200px;
+  opacity: 1;
+  margin-top: 12px;
 }
