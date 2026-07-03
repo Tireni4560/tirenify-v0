@@ -59,6 +59,10 @@ const supabase = createClient(
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Temporarily disable welcome email sending while the Tirenify domain is verified in Resend.
+// TODO: Re-enable welcome email sending after the Tirenify domain is verified in Resend.
+const EMAIL_SENDING_TEMPORARILY_DISABLED = true;
+
 // ─────────────────────────────────────────────────────────────
 // CONNECTIVITY TEST: Test Supabase connection on startup
 // ─────────────────────────────────────────────────────────────
@@ -204,8 +208,22 @@ app.post("/api/subscribe", async (req, res) => {
         .json({ message: "Could not save subscription." });
     }
 
-    // Send welcome email via Resend
-    await resend.emails.send({
+    if (EMAIL_SENDING_TEMPORARILY_DISABLED) {
+      console.log("⚠️  Welcome email sending is temporarily disabled; subscriber inserted successfully.");
+      return res.status(200).json({
+        message: "Subscribed successfully.",
+        info: "Your subscription has been saved successfully. Email notifications are not yet available because the email system is still being finalized. You will begin receiving updates once the email system is live.",
+      });
+    }
+
+    // TODO: Re-enable this welcome email sending block after the Tirenify domain is verified in Resend.
+    // Verify the Resend API key before sending
+    if (!process.env.RESEND_API_KEY) {
+      console.error("❌ Missing RESEND_API_KEY when attempting to send welcome email.");
+      return res.status(500).json({ message: "Email service is not configured." });
+    }
+
+    const resendPayload = {
       from: "onboarding@resend.dev",
       to: email,
       subject: "Welcome to Tirenify",
@@ -237,9 +255,66 @@ app.post("/api/subscribe", async (req, res) => {
         </body>
         </html>
       `,
+    };
+
+    console.log("🛡️  Sending welcome email via Resend with payload:", {
+      from: resendPayload.from,
+      to: resendPayload.to,
+      subject: resendPayload.subject,
     });
 
-    return res.status(200).json({ message: "Subscribed successfully." });
+    let resendResult;
+    try {
+      resendResult = await resend.emails.send(resendPayload);
+      console.log("📨 Resend send result:", JSON.stringify(resendResult, null, 2));
+    } catch (sendError) {
+      console.error("❌ Resend send threw an exception for email:", email);
+      console.error("Full send exception object:", sendError);
+      console.error("Full send exception JSON:", JSON.stringify(sendError, Object.getOwnPropertyNames(sendError), 2));
+      return res
+        .status(500)
+        .json({ message: "Could not send welcome email." });
+    }
+
+    if (!resendResult) {
+      console.error("❌ Resend returned no result for email:", email);
+      return res.status(500).json({ message: "Email service returned no response." });
+    }
+
+    // If Resend reports an error in the response payload, fail fast.
+    if (resendResult.error || resendResult.errors) {
+      console.error("❌ Resend reported an error in the response payload.");
+      console.error("Complete resend result:", JSON.stringify(resendResult, null, 2));
+      return res.status(500).json({ message: "Email service reported an error." });
+    }
+
+    // Verify the sender and recipient details explicitly.
+    if (resendPayload.from !== "onboarding@resend.dev") {
+      console.error("❌ Sender address mismatch:", resendPayload.from);
+      return res.status(500).json({ message: "Email sender is invalid." });
+    }
+    if (resendPayload.to !== email) {
+      console.error("❌ Recipient address mismatch:", resendPayload.to, "expected", email);
+      return res.status(500).json({ message: "Email recipient does not match subscription email." });
+    }
+
+    // A successful Resend response should include a valid acceptance signal.
+    const acceptedStatus = resendResult.status?.toLowerCase();
+    const hasValidStatus = acceptedStatus === "queued" || acceptedStatus === "sent";
+    const hasResultId = typeof resendResult.id === "string" && resendResult.id.length > 0;
+
+    if (!hasValidStatus && !hasResultId) {
+      console.error("❌ Resend did not confirm email acceptance.");
+      console.error("Complete resend result:", JSON.stringify(resendResult, null, 2));
+      return res.status(500).json({ message: "Email was not accepted by Resend." });
+    }
+
+    if (acceptedStatus && !hasValidStatus) {
+      console.error("❌ Resend returned unexpected status:", resendResult.status);
+      return res.status(500).json({ message: "Email was not accepted by Resend." });
+    }
+
+    return res.status(200).json({ message: "Subscribed successfully.", resendResult });
 
   } catch (err) {
     // ─────────────────────────────────────────────────────────────

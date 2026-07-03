@@ -129,9 +129,7 @@ function renderBreachResults(data, email, resultBox) {
 }
 
 function showEmailOptIn(checkedEmail, resultBox) {
-  // Don't show if already subscribed this session
-  if (sessionStorage.getItem("tirenify_subscribed")) return;
-
+  // Always show a fresh subscription form for each new breach result.
   const optIn = document.createElement("div");
   optIn.id = "emailOptIn";
   optIn.className = "email-opt-in";
@@ -184,12 +182,20 @@ function showEmailOptIn(checkedEmail, resultBox) {
       msgDiv.style.display = "block";
 
       if (res.ok) {
-        sessionStorage.setItem("tirenify_subscribed", "true");
         msgDiv.className = "opt-in-success";
-        msgDiv.innerHTML = `
-          <span class="opt-in-check">✓</span>
-          <strong>You're in.</strong> Check your inbox for a welcome email from Tirenify.
-        `;
+        if (result.message === "You're already subscribed.") {
+          msgDiv.innerHTML = `
+            <p>✅ You're already subscribed.</p>
+            <p>Thanks for being part of the Tirenify community. We'll notify you once our email updates become available.</p>
+          `;
+        } else {
+          msgDiv.innerHTML = `
+            <p>🎉 You're on the list!</p>
+            <p>Your subscription has been saved successfully.</p>
+            <p>We're still setting up our email infrastructure, so you won't receive a welcome email just yet. Once it's ready, you'll be among the first to receive security updates and product announcements.</p>
+            <p>Thanks for joining Tirenify early.</p>
+          `;
+        }
       } else {
         msgDiv.className = "opt-in-error";
         msgDiv.textContent = result.message || "Something went wrong. Please try again.";
@@ -211,6 +217,11 @@ document.addEventListener("DOMContentLoaded", () => {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = emailInput.value.trim();
+
+    // Reset the search page state for every fresh breach check.
+    const existingOptIn = document.getElementById("emailOptIn");
+    if (existingOptIn) existingOptIn.remove();
+    emailInput.value = "";
 
     // Pick 2 random messages from list 1, 1 from list 2
     const msg1 = getRandomMessage(loadingMessagesGeneral);
