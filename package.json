@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "newsletter": "node send-newsletter.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",

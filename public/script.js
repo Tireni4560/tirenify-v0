@@ -171,7 +171,7 @@ function showEmailOptIn(checkedEmail, resultBox) {
     submitBtn.disabled = true;
 
     try {
-      const res = await fetch("/api/subscribe", {
+      const res = await fetch("/api/email/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailVal }),
@@ -190,10 +190,9 @@ function showEmailOptIn(checkedEmail, resultBox) {
           `;
         } else {
           msgDiv.innerHTML = `
-            <p>🎉 You're on the list!</p>
-            <p>Your subscription has been saved successfully.</p>
-            <p>We're still setting up our email infrastructure, so you won't receive a welcome email just yet. Once it's ready, you'll be among the first to receive security updates and product announcements.</p>
-            <p>Thanks for joining Tirenify early.</p>
+            <p>🎉 Almost there — check your inbox!</p>
+            <p>We've sent a confirmation email to <strong>${emailVal}</strong> from hello@tirenify.app.</p>
+            <p>Click the confirmation link inside to complete your subscription and start receiving security updates.</p>
           `;
         }
       } else {
@@ -208,6 +207,42 @@ function showEmailOptIn(checkedEmail, resultBox) {
     }
   });
 }
+
+// Show a status banner when the user lands here from an email link
+// (the confirm endpoint redirects to /?confirmed=1, unsubscribe to /?unsubscribed=1).
+(function showEmailLinkBanner() {
+  const params = new URLSearchParams(window.location.search);
+  let title, body, accent;
+
+  if (params.get("confirmed") === "1") {
+    title = "✓ Subscription confirmed";
+    body = "You're all set! You'll now receive security insights and updates from Tirenify.";
+    accent = "#22c55e";
+  } else if (params.get("unsubscribed") === "1") {
+    title = "You've been unsubscribed";
+    body = "You won't receive any more emails from Tirenify. You can resubscribe anytime after a breach check.";
+    accent = "#94a3b8";
+  } else {
+    return;
+  }
+
+  const banner = document.createElement("div");
+  banner.style.cssText = `
+    max-width: 520px; margin: 0 auto 24px; padding: 16px 20px;
+    background: rgba(15, 23, 42, 0.88); border: 1px solid ${accent};
+    border-radius: 12px; text-align: left;
+  `;
+  banner.innerHTML = `
+    <p style="color: ${accent}; font-weight: 700; margin: 0 0 4px;">${title}</p>
+    <p style="color: #94a3b8; font-size: 14px; margin: 0;">${body}</p>
+  `;
+
+  const container = document.querySelector(".container");
+  if (container) container.insertAdjacentElement("afterbegin", banner);
+
+  // Clean the query string so a refresh doesn't re-show the banner.
+  window.history.replaceState({}, "", window.location.pathname);
+})();
 
 const form = document.getElementById("breachForm");
 const emailInput = document.getElementById("email");
@@ -246,7 +281,7 @@ if (form && emailInput && resultBox) {
     `;
 
     // Fire API call immediately — don't await yet
-    const breachPromise = fetch("/check-breach", {
+    const breachPromise = fetch("/api/email/check-breach", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),

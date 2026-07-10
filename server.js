@@ -1,13 +1,18 @@
 require("dotenv").config();
 
 const express = require("express");
+const crypto = require("crypto");
 const fetch = global.fetch; // Node v18+ has fetch built-in
 const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 const { Resend } = require("resend");
+const { buildWelcomeEmail, buildConfirmedEmail } = require("./lib/emailTemplates");
 
 const app = express();
 const PORT = 3000;
+
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://breachchecker-rho.vercel.app";
+const SENDER_EMAIL = "hello@tirenify.app";
 
 // ─────────────────────────────────────────────────────────────
 // DIAGNOSTICS: Log environment variables on startup
@@ -22,6 +27,10 @@ console.log(
 console.log(
   "RESEND_API_KEY exists:",
   process.env.RESEND_API_KEY ? "✅ YES" : "❌ NO"
+);
+console.log(
+  "EXPOSED_ORKNOT_API_KEY exists:",
+  process.env.EXPOSED_ORKNOT_API_KEY ? "✅ YES" : "❌ NO (using free tier)"
 );
 console.log("─" + "─".repeat(50) + "\n");
 
@@ -58,10 +67,6 @@ const supabase = createClient(
 );
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-
-// Temporarily disable welcome email sending while the Tirenify domain is verified in Resend.
-// TODO: Re-enable welcome email sending after the Tirenify domain is verified in Resend.
-const EMAIL_SENDING_TEMPORARILY_DISABLED = true;
 
 // ─────────────────────────────────────────────────────────────
 // CONNECTIVITY TEST: Test Supabase connection on startup
@@ -117,235 +122,275 @@ testSupabaseConnection().then((result) => {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// Route to check breaches
-app.post("/check-breach", async (req, res) => {
+const INVALID_EMAIL_MESSAGE = "This email doesn't appear to be valid. Please check and try again.";
+
+// Basic shape check for subscriptions; Resend does the real deliverability
+// work when it sends the confirmation email.
+const emailShapeRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// POST /api/email/check-breach — no validation step; the email goes straight
+// to XposedOrNot, which handles malformed input itself.
+async function handleCheckBreach(req, res) {
   const { email } = req.body;
 
   if (!email || typeof email !== "string") {
-    return res.status(400).json({ message: "Invalid email provided." });
+    return res.status(400).json({ message: "Email is required." });
   }
 
   try {
     console.log("Checking email:", email);
 
     const apiUrl = `https://api.xposedornot.com/v1/check-email/${encodeURIComponent(email)}`;
-    console.log("Calling API:", apiUrl);
+    const headers = process.env.EXPOSED_ORKNOT_API_KEY
+      ? { "api-key": process.env.EXPOSED_ORKNOT_API_KEY }
+      : undefined;
 
-    const response = await fetch(apiUrl);
+    const response = await fetch(apiUrl, { headers });
     const data = await response.json();
 
-    
-
     console.log("Response status:", response.status);
-    console.log("API data received:", data);
 
     if (!response.ok) {
       return res.status(response.status).json({ message: data.message || "API error occurred." });
     }
 
-    // Forward the API response to the frontend
     res.json(data);
-
   } catch (error) {
-    console.error("Error contacting API:", error);
+    console.error("Error contacting breach API:", error);
     res.status(500).json({ message: "Connection error. Could not reach breach API." });
   }
-});
+}
 
-app.post("/api/subscribe", async (req, res) => {
-  const { email } = req.body;
+app.post("/api/email/check-breach", handleCheckBreach);
+app.post("/check-breach", handleCheckBreach); // legacy alias for existing frontend
+
+// POST /api/email/subscribe — validates the email, upserts a user + pending
+// subscription, and sends a welcome/confirmation email via Resend.
+async function handleSubscribe(req, res) {
+  const { email, preferences = {} } = req.body;
 
   console.log("\n✉️  SUBSCRIPTION REQUEST RECEIVED");
-  console.log("─" + "─".repeat(50));
   console.log("Email:", email);
-  console.log("─" + "─".repeat(50));
 
-  // Basic email validation
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!email || !emailRegex.test(email)) {
-    console.warn("❌ Email validation failed");
-    return res.status(400).json({ message: "Invalid email address." });
+  if (!email || typeof email !== "string" || !emailShapeRegex.test(email)) {
+    return res.status(400).json({ message: INVALID_EMAIL_MESSAGE });
   }
 
   try {
-    console.log("📝 Attempting to insert email into subscribers table...");
+    const confirmationToken = crypto.randomBytes(32).toString("hex");
+    const now = new Date().toISOString();
 
-    // Attempt to insert the email directly
-    const { error: dbError } = await supabase
-      .from("subscribers")
-      .insert([{ email }]);
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("id, confirmed_at")
+      .eq("email", email)
+      .maybeSingle();
 
-    console.log("✓ Insert attempt completed. Checking for errors...");
+    let userId;
+    if (existingUser) {
+      userId = existingUser.id;
+      await supabase
+        .from("users")
+        .update({
+          confirmation_token: confirmationToken,
+          date_subscribed: now,
+        })
+        .eq("id", userId);
+    } else {
+      const { data: inserted, error: insertError } = await supabase
+        .from("users")
+        .insert([{
+          email,
+          confirmation_token: confirmationToken,
+          date_subscribed: now,
+        }])
+        .select("id")
+        .single();
 
-    // Handle database errors
-    if (dbError) {
-      // ─────────────────────────────────────────────────────────────
-      // LOG: Full error details for debugging
-      // ─────────────────────────────────────────────────────────────
-      console.error("\n❌ SUBSCRIPTION ERROR for email:", email);
-      console.error("─" + "─".repeat(50));
-      console.error("Error code:", dbError.code);
-      console.error("Error message:", dbError.message);
-      if (dbError.details) console.error("Error details:", dbError.details);
-      if (dbError.hint) console.error("Error hint:", dbError.hint);
-      console.error("Error status:", dbError.status);
-      console.error("\nFull error object:");
-      console.error(JSON.stringify(dbError, null, 2));
-      console.error("─" + "─".repeat(50) + "\n");
+      if (insertError) {
+        console.error("❌ Failed to insert user:", insertError.message);
+        return res.status(500).json({ message: "Could not save subscription." });
+      }
+      userId = inserted.id;
+    }
 
-      // Check if it's a unique constraint violation (duplicate email)
-      if (
-        dbError.code === "23505" ||
-        dbError.message?.includes("duplicate") ||
-        dbError.message?.includes("already exists")
-      ) {
+    const { data: existingSub } = await supabase
+      .from("subscriptions")
+      .select("id, status")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (existingSub) {
+      if (existingSub.status === "active") {
         return res.status(200).json({ message: "You're already subscribed." });
       }
-
-      // Return generic error for other database issues
-      return res
-        .status(500)
-        .json({ message: "Could not save subscription." });
+      await supabase
+        .from("subscriptions")
+        .update({
+          breach_alerts: preferences.breach_alerts ?? true,
+          product_updates: preferences.product_updates ?? true,
+          security_tips: preferences.security_tips ?? true,
+          status: "pending",
+        })
+        .eq("id", existingSub.id);
+    } else {
+      await supabase.from("subscriptions").insert([{
+        user_id: userId,
+        breach_alerts: preferences.breach_alerts ?? true,
+        product_updates: preferences.product_updates ?? true,
+        security_tips: preferences.security_tips ?? true,
+        status: "pending",
+      }]);
     }
 
-    if (EMAIL_SENDING_TEMPORARILY_DISABLED) {
-      console.log("⚠️  Welcome email sending is temporarily disabled; subscriber inserted successfully.");
-      return res.status(200).json({
-        message: "Subscribed successfully.",
-        info: "Your subscription has been saved successfully. Email notifications are not yet available because the email system is still being finalized. You will begin receiving updates once the email system is live.",
-      });
-    }
+    const confirmUrl = `${FRONTEND_URL.replace(/\/$/, "")}/api/email/confirm?token=${confirmationToken}`;
+    const html = buildWelcomeEmail({ confirmUrl, checkAnotherUrl: FRONTEND_URL });
 
-    // TODO: Re-enable this welcome email sending block after the Tirenify domain is verified in Resend.
-    // Verify the Resend API key before sending
-    if (!process.env.RESEND_API_KEY) {
-      console.error("❌ Missing RESEND_API_KEY when attempting to send welcome email.");
-      return res.status(500).json({ message: "Email service is not configured." });
-    }
+    let sendStatus = "failed";
+    let resendMessageId = null;
+    let errorMessage = null;
 
-    const resendPayload = {
-      from: "onboarding@resend.dev",
-      to: email,
-      subject: "Welcome to Tirenify",
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; background: #f9f9f9; padding: 32px;">
-          <div style="max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 12px; padding: 32px;">
-            <h2 style="color: #0f172a; margin-bottom: 8px;">Welcome to Tirenify</h2>
-            <p style="color: #475569; line-height: 1.6;">
-              Thanks for joining. You're now part of a growing community of African internet users
-              taking control of their digital security.
-            </p>
-            <p style="color: #475569; line-height: 1.6;">
-              Tirenify helps you discover if your data has been exposed in known breaches —
-              before attackers use it against you.
-            </p>
-            <a href="https://breachchecker-rho.vercel.app/"
-               style="display: inline-block; margin-top: 20px; padding: 12px 24px;
-                      background: #1d4ed8; color: #ffffff; border-radius: 8px;
-                      text-decoration: none; font-weight: 700;">
-              Check another email
-            </a>
-            <p style="margin-top: 32px; font-size: 13px; color: #94a3b8;">
-              You're receiving this because you signed up at breachchecker-rho.vercel.app.<br/>
-              If this wasn't you, you can safely ignore this email.
-            </p>
-          </div>
-        </body>
-        </html>
-      `,
-    };
-
-    console.log("🛡️  Sending welcome email via Resend with payload:", {
-      from: resendPayload.from,
-      to: resendPayload.to,
-      subject: resendPayload.subject,
-    });
-
-    let resendResult;
     try {
-      resendResult = await resend.emails.send(resendPayload);
-      console.log("📨 Resend send result:", JSON.stringify(resendResult, null, 2));
+      const resendResult = await resend.emails.send({
+        from: SENDER_EMAIL,
+        to: email,
+        subject: "Welcome to Tirenify — confirm your subscription",
+        html,
+      });
+      resendMessageId = resendResult?.data?.id || resendResult?.id || null;
+      sendStatus = resendResult?.error ? "failed" : "sent";
+      if (resendResult?.error) errorMessage = resendResult.error.message;
     } catch (sendError) {
-      console.error("❌ Resend send threw an exception for email:", email);
-      console.error("Full send exception object:", sendError);
-      console.error("Full send exception JSON:", JSON.stringify(sendError, Object.getOwnPropertyNames(sendError), 2));
-      return res
-        .status(500)
-        .json({ message: "Could not send welcome email." });
+      console.error("❌ Resend send threw an exception:", sendError.message);
+      errorMessage = sendError.message;
     }
 
-    if (!resendResult) {
-      console.error("❌ Resend returned no result for email:", email);
-      return res.status(500).json({ message: "Email service returned no response." });
-    }
+    await supabase.from("email_logs").insert([{
+      user_id: userId,
+      recipient_email: email,
+      email_type: "welcome",
+      subject: "Welcome to Tirenify — confirm your subscription",
+      sent_date: now,
+      status: sendStatus,
+      resend_message_id: resendMessageId,
+      error_message: errorMessage,
+    }]);
 
-    // If Resend reports an error in the response payload, fail fast.
-    if (resendResult.error || resendResult.errors) {
-      console.error("❌ Resend reported an error in the response payload.");
-      console.error("Complete resend result:", JSON.stringify(resendResult, null, 2));
-      return res.status(500).json({ message: "Email service reported an error." });
-    }
-
-    // Verify the sender and recipient details explicitly.
-    if (resendPayload.from !== "onboarding@resend.dev") {
-      console.error("❌ Sender address mismatch:", resendPayload.from);
-      return res.status(500).json({ message: "Email sender is invalid." });
-    }
-    if (resendPayload.to !== email) {
-      console.error("❌ Recipient address mismatch:", resendPayload.to, "expected", email);
-      return res.status(500).json({ message: "Email recipient does not match subscription email." });
-    }
-
-    // A successful Resend response should include a valid acceptance signal.
-    const acceptedStatus = resendResult.status?.toLowerCase();
-    const hasValidStatus = acceptedStatus === "queued" || acceptedStatus === "sent";
-    const hasResultId = typeof resendResult.id === "string" && resendResult.id.length > 0;
-
-    if (!hasValidStatus && !hasResultId) {
-      console.error("❌ Resend did not confirm email acceptance.");
-      console.error("Complete resend result:", JSON.stringify(resendResult, null, 2));
-      return res.status(500).json({ message: "Email was not accepted by Resend." });
-    }
-
-    if (acceptedStatus && !hasValidStatus) {
-      console.error("❌ Resend returned unexpected status:", resendResult.status);
-      return res.status(500).json({ message: "Email was not accepted by Resend." });
-    }
-
-    return res.status(200).json({ message: "Subscribed successfully.", resendResult });
-
+    return res.status(200).json({
+      message: "Subscribed successfully.",
+      info: "Check your inbox for a confirmation email to complete your subscription.",
+    });
   } catch (err) {
-    // ─────────────────────────────────────────────────────────────
-    // LOG: Full exception details (uncaught errors)
-    // ─────────────────────────────────────────────────────────────
-    console.error(
-      "\n⚠️  UNCAUGHT EXCEPTION in /api/subscribe for email:",
-      email
-    );
-    console.error("─" + "─".repeat(50));
-    console.error("Error type:", err.constructor.name);
-    console.error("Error message:", err.message);
-    console.error("Error code:", err.code);
-    if (err.cause) {
-      console.error("\nCaused by:");
-      console.error("  Message:", err.cause.message);
-      console.error("  Code:", err.cause.code);
-      if (err.cause.cause) {
-        console.error("  Nested cause:", err.cause.cause);
-      }
-    }
-    console.error("\nStack trace:");
-    console.error(err.stack);
-    console.error("\nFull error object:");
-    console.error(JSON.stringify(err, null, 2));
-    console.error("─" + "─".repeat(50) + "\n");
-
-    return res
-      .status(500)
-      .json({ message: "Server error. Please try again." });
+    console.error("⚠️  UNCAUGHT EXCEPTION in subscribe for email:", email, err);
+    return res.status(500).json({ message: "Server error. Please try again." });
   }
+}
+
+app.post("/api/email/subscribe", handleSubscribe);
+app.post("/api/subscribe", handleSubscribe); // legacy alias for existing frontend
+
+// GET /api/email/confirm — completes double opt-in.
+app.get("/api/email/confirm", async (req, res) => {
+  const { token } = req.query;
+  if (!token || typeof token !== "string") {
+    return res.status(400).send("Missing confirmation token.");
+  }
+
+  const { data: user } = await supabase
+    .from("users")
+    .select("id, email, confirmed_at")
+    .eq("confirmation_token", token)
+    .maybeSingle();
+
+  if (!user) {
+    return res.status(404).send("This confirmation link is invalid or has expired.");
+  }
+
+  const alreadyConfirmed = Boolean(user.confirmed_at);
+  const now = new Date().toISOString();
+  await supabase.from("users").update({ confirmed_at: now }).eq("id", user.id);
+  await supabase
+    .from("subscriptions")
+    .update({ status: "active", subscribed_at: now })
+    .eq("user_id", user.id);
+
+  // Send the "you're confirmed" email once; a failure here must not block
+  // the confirmation itself.
+  if (!alreadyConfirmed) {
+    const subject = "You're confirmed! Welcome to Tirenify";
+    let sendStatus = "failed";
+    let resendMessageId = null;
+    let errorMessage = null;
+
+    try {
+      const resendResult = await resend.emails.send({
+        from: SENDER_EMAIL,
+        to: user.email,
+        subject,
+        html: buildConfirmedEmail({ checkerUrl: FRONTEND_URL }),
+      });
+      resendMessageId = resendResult?.data?.id || resendResult?.id || null;
+      sendStatus = resendResult?.error ? "failed" : "sent";
+      if (resendResult?.error) errorMessage = resendResult.error.message;
+    } catch (sendError) {
+      console.error("❌ Confirmed email send failed:", sendError.message);
+      errorMessage = sendError.message;
+    }
+
+    await supabase.from("email_logs").insert([{
+      user_id: user.id,
+      recipient_email: user.email,
+      email_type: "confirmation",
+      subject,
+      sent_date: now,
+      status: sendStatus,
+      resend_message_id: resendMessageId,
+      error_message: errorMessage,
+    }]);
+  }
+
+  res.redirect(`${FRONTEND_URL.replace(/\/$/, "")}/?confirmed=1`);
+});
+
+// Marks the subscription for an email as unsubscribed. Returns true if a
+// matching user existed (idempotent — repeat calls are harmless).
+async function unsubscribeEmail(email) {
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (!user) return false;
+
+  await supabase
+    .from("subscriptions")
+    .update({ status: "unsubscribed", unsubscribed_date: new Date().toISOString() })
+    .eq("user_id", user.id);
+
+  return true;
+}
+
+// POST /api/email/unsubscribe
+app.post("/api/email/unsubscribe", async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ message: "Email is required." });
+  }
+
+  const found = await unsubscribeEmail(email);
+  res.status(200).json({ message: found ? "You've been unsubscribed." : "You're not subscribed." });
+});
+
+// GET /api/email/unsubscribe — one-click unsubscribe from newsletter links.
+app.get("/api/email/unsubscribe", async (req, res) => {
+  const { email } = req.query;
+  if (!email || typeof email !== "string") {
+    return res.status(400).send("Missing email.");
+  }
+
+  await unsubscribeEmail(email);
+  res.redirect(`${FRONTEND_URL.replace(/\/$/, "")}/?unsubscribed=1`);
 });
 
 // Start server
