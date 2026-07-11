@@ -11,7 +11,7 @@ const { buildWelcomeEmail, buildConfirmedEmail } = require("./lib/emailTemplates
 const app = express();
 const PORT = 3000;
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://breachchecker-rho.vercel.app";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://check.tirenify.app";
 const SENDER_EMAIL = "hello@tirenify.app";
 
 // ─────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ async function testSupabaseConnection() {
   console.log("🔍 Testing Supabase connectivity...");
   try {
     const { data, error } = await supabase
-      .from("subscribers")
+      .from("subscriptions")
       .select("id")
       .limit(1);
 
@@ -128,6 +128,29 @@ const INVALID_EMAIL_MESSAGE = "This email doesn't appear to be valid. Please che
 // work when it sends the confirmation email.
 const emailShapeRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Fetches from the breach API with retries: transient network failures
+// (connect timeouts, DNS hiccups) are retried with a short backoff before
+// giving up. HTTP error responses are returned as-is — only thrown network
+// errors trigger a retry.
+async function fetchBreachApiWithRetry(url, options, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (err) {
+      lastError = err;
+      console.error(`⚠️  Breach API attempt ${attempt}/${attempts} failed:`, err.cause?.message || err.message);
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
 // POST /api/email/check-breach — no validation step; the email goes straight
 // to XposedOrNot, which handles malformed input itself.
 async function handleCheckBreach(req, res) {
@@ -145,7 +168,7 @@ async function handleCheckBreach(req, res) {
       ? { "api-key": process.env.EXPOSED_ORKNOT_API_KEY }
       : undefined;
 
-    const response = await fetch(apiUrl, { headers });
+    const response = await fetchBreachApiWithRetry(apiUrl, { headers });
     const data = await response.json();
 
     console.log("Response status:", response.status);
@@ -156,8 +179,10 @@ async function handleCheckBreach(req, res) {
 
     res.json(data);
   } catch (error) {
-    console.error("Error contacting breach API:", error);
-    res.status(500).json({ message: "Connection error. Could not reach breach API." });
+    console.error("Error contacting breach API (all retries exhausted):", error);
+    res.status(504).json({
+      message: "The breach database is temporarily unreachable. Please try again in a moment.",
+    });
   }
 }
 
@@ -177,7 +202,6 @@ async function handleSubscribe(req, res) {
   }
 
   try {
-    const confirmationToken = crypto.randomBytes(32).toString("hex");
     const now = new Date().toISOString();
 
     const { data: existingUser } = await supabase
@@ -185,6 +209,33 @@ async function handleSubscribe(req, res) {
       .select("id, confirmed_at")
       .eq("email", email)
       .maybeSingle();
+
+    // Duplicate guards — exit before any writes or sends.
+    let existingSub = null;
+    if (existingUser) {
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("id, status")
+        .eq("user_id", existingUser.id)
+        .maybeSingle();
+      existingSub = sub;
+
+      if (existingSub?.status === "active") {
+        return res.status(200).json({
+          message: "This email is already subscribed. Check your inbox for updates.",
+        });
+      }
+
+      if (existingSub?.status === "pending" && !existingUser.confirmed_at) {
+        return res.status(200).json({
+          message: "Confirmation email already sent. Check your inbox to confirm your subscription.",
+        });
+      }
+      // Anything else (unsubscribed, or user without a subscription row)
+      // falls through to a fresh resubscribe below.
+    }
+
+    const confirmationToken = crypto.randomBytes(32).toString("hex");
 
     let userId;
     if (existingUser) {
@@ -214,16 +265,7 @@ async function handleSubscribe(req, res) {
       userId = inserted.id;
     }
 
-    const { data: existingSub } = await supabase
-      .from("subscriptions")
-      .select("id, status")
-      .eq("user_id", userId)
-      .maybeSingle();
-
     if (existingSub) {
-      if (existingSub.status === "active") {
-        return res.status(200).json({ message: "You're already subscribed." });
-      }
       await supabase
         .from("subscriptions")
         .update({
@@ -243,7 +285,10 @@ async function handleSubscribe(req, res) {
       }]);
     }
 
-    const confirmUrl = `${FRONTEND_URL.replace(/\/$/, "")}/api/email/confirm?token=${confirmationToken}`;
+    // Link to the homepage with ?token= — the frontend JS detects the param
+    // and shows the confirmation page. (Works on static hosting too, unlike
+    // a dedicated /confirm-email route.)
+    const confirmUrl = `${FRONTEND_URL.replace(/\/$/, "")}/?token=${confirmationToken}`;
     const html = buildWelcomeEmail({ confirmUrl, checkAnotherUrl: FRONTEND_URL });
 
     let sendStatus = "failed";
@@ -289,11 +334,25 @@ async function handleSubscribe(req, res) {
 app.post("/api/email/subscribe", handleSubscribe);
 app.post("/api/subscribe", handleSubscribe); // legacy alias for existing frontend
 
-// GET /api/email/confirm — completes double opt-in.
-app.get("/api/email/confirm", async (req, res) => {
+// GET /confirm-email — the page the welcome email links to. Serves the
+// frontend; the page's JS reads ?token= and calls /api/email/confirm.
+app.get("/confirm-email", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// GET /api/email/confirm — completes double opt-in. Always returns JSON
+// ({ success, message }); the frontend handles display and redirecting.
+async function handleConfirmEmail(req, res) {
   const { token } = req.query;
+
+  // Old welcome emails linked a browser directly here — hand those off to
+  // the confirmation page instead of showing raw JSON.
+  if ((req.get("accept") || "").includes("text/html")) {
+    return res.redirect(`/confirm-email?token=${encodeURIComponent(token || "")}`);
+  }
+
   if (!token || typeof token !== "string") {
-    return res.status(400).send("Missing confirmation token.");
+    return res.status(400).json({ success: false, message: "Confirmation token missing." });
   }
 
   const { data: user } = await supabase
@@ -303,16 +362,28 @@ app.get("/api/email/confirm", async (req, res) => {
     .maybeSingle();
 
   if (!user) {
-    return res.status(404).send("This confirmation link is invalid or has expired.");
+    return res.status(404).json({ success: false, message: "This confirmation link is invalid or has expired." });
   }
 
   const alreadyConfirmed = Boolean(user.confirmed_at);
   const now = new Date().toISOString();
   await supabase.from("users").update({ confirmed_at: now }).eq("id", user.id);
-  await supabase
+
+  // Activate the subscription; create it if the row is somehow missing so a
+  // valid confirmation link always results in an active subscription.
+  const { data: updatedSubs } = await supabase
     .from("subscriptions")
     .update({ status: "active", subscribed_at: now })
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("id");
+
+  if (!updatedSubs || updatedSubs.length === 0) {
+    await supabase.from("subscriptions").insert([{
+      user_id: user.id,
+      status: "active",
+      subscribed_at: now,
+    }]);
+  }
 
   // Send the "you're confirmed" email once; a failure here must not block
   // the confirmation itself.
@@ -332,6 +403,9 @@ app.get("/api/email/confirm", async (req, res) => {
       resendMessageId = resendResult?.data?.id || resendResult?.id || null;
       sendStatus = resendResult?.error ? "failed" : "sent";
       if (resendResult?.error) errorMessage = resendResult.error.message;
+      if (sendStatus === "sent") {
+        console.log("✅ Confirmation email sent to:", user.email);
+      }
     } catch (sendError) {
       console.error("❌ Confirmed email send failed:", sendError.message);
       errorMessage = sendError.message;
@@ -349,8 +423,13 @@ app.get("/api/email/confirm", async (req, res) => {
     }]);
   }
 
-  res.redirect(`${FRONTEND_URL.replace(/\/$/, "")}/?confirmed=1`);
-});
+  return res.status(200).json({
+    success: true,
+    message: "Email confirmed successfully! Welcome to Tirenify.",
+  });
+}
+
+app.get("/api/email/confirm", handleConfirmEmail);
 
 // Marks the subscription for an email as unsubscribed. Returns true if a
 // matching user existed (idempotent — repeat calls are harmless).
@@ -390,7 +469,7 @@ app.get("/api/email/unsubscribe", async (req, res) => {
   }
 
   await unsubscribeEmail(email);
-  res.redirect(`${FRONTEND_URL.replace(/\/$/, "")}/?unsubscribed=1`);
+  res.redirect("/?unsubscribed=1");
 });
 
 // Start server

@@ -147,7 +147,7 @@ function showEmailOptIn(checkedEmail, resultBox) {
         />
         <div class="opt-in-actions">
           <button type="button" id="optInSkip">No thanks</button>
-          <button type="submit" id="optInSubmit">Send me the results</button>
+          <button type="submit" id="optInSubmit">Subscribe</button>
         </div>
         <p class="opt-in-disclaimer">We respect your privacy. One email to start, unsubscribe anytime.</p>
       </form>
@@ -183,17 +183,15 @@ function showEmailOptIn(checkedEmail, resultBox) {
 
       if (res.ok) {
         msgDiv.className = "opt-in-success";
-        if (result.message === "You're already subscribed.") {
-          msgDiv.innerHTML = `
-            <p>✅ You're already subscribed.</p>
-            <p>Thanks for being part of the Tirenify community. We'll notify you once our email updates become available.</p>
-          `;
-        } else {
+        if (result.message === "Subscribed successfully.") {
           msgDiv.innerHTML = `
             <p>🎉 Almost there — check your inbox!</p>
             <p>We've sent a confirmation email to <strong>${emailVal}</strong> from hello@tirenify.app.</p>
             <p>Click the confirmation link inside to complete your subscription and start receiving security updates.</p>
           `;
+        } else {
+          // Duplicate cases: already subscribed, or confirmation already sent.
+          msgDiv.innerHTML = `<p>✅ ${result.message}</p>`;
         }
       } else {
         msgDiv.className = "opt-in-error";
@@ -207,6 +205,54 @@ function showEmailOptIn(checkedEmail, resultBox) {
     }
   });
 }
+
+// Confirmation flow: if the page loads with ?token= (email confirmation link
+// served as a static page instead of hitting the server route), confirm via
+// the API and show the result in #confirmationContainer.
+(function handleConfirmationToken() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token");
+  if (!token) return;
+
+  console.log("Token found:", token);
+
+  const container = document.getElementById("confirmationContainer");
+  const title = document.getElementById("confirmTitle");
+  const message = document.getElementById("confirmMessage");
+  const breachForm = document.getElementById("breachForm");
+  const result = document.getElementById("result");
+
+  if (breachForm) breachForm.style.display = "none";
+  if (result) result.style.display = "none";
+  if (container) container.style.display = "block";
+
+  console.log("Calling confirmation endpoint...");
+
+  fetch(`/api/email/confirm?token=${encodeURIComponent(token)}`, {
+    headers: { "Accept": "application/json" },
+  })
+    .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+    .then(({ ok, data }) => {
+      console.log("Confirmation response:", data);
+      if (ok && data.success) {
+        if (title) { title.textContent = "✓ Subscription confirmed"; title.style.color = "#22c55e"; }
+        if (message) {
+          message.textContent = `${data.message} Redirecting you to the homepage…`;
+          message.style.color = "#22c55e";
+        }
+        console.log("Success message displayed — redirecting to homepage in 7 seconds");
+        setTimeout(() => { window.location.href = "/"; }, 7000);
+      } else {
+        if (title) { title.textContent = "Confirmation failed"; title.style.color = "#f87171"; }
+        if (message) message.textContent = data.message || "This confirmation link is invalid or has expired.";
+        console.log("Failure message displayed:", data.message);
+      }
+    })
+    .catch(() => {
+      if (title) { title.textContent = "Confirmation failed"; title.style.color = "#f87171"; }
+      if (message) message.textContent = "Could not reach the server. Please try the link again in a moment.";
+    });
+})();
 
 // Show a status banner when the user lands here from an email link
 // (the confirm endpoint redirects to /?confirmed=1, unsubscribe to /?unsubscribed=1).

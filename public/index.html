@@ -11,27 +11,25 @@
   <meta name="author" content="Daniel Adeleye" />
   <meta name="robots" content="index, follow" />
   <meta name="theme-color" content="#060b18" />
-  <link rel="canonical" href="https://breachchecker-rho.vercel.app/" />
+  <link rel="canonical" href="https://check.tirenify.app/" />
+  <link rel="icon" type="image/png" href="/favicon.png" sizes="512x512" />
+  <link rel="apple-touch-icon" href="/favicon.png" />
 
   <!-- ═══════════════════════════════════════════
        OPEN GRAPH — WhatsApp, Facebook, LinkedIn,
        Discord, Telegram, Slack
   ═══════════════════════════════════════════ -->
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://breachchecker-rho.vercel.app/" />
+  <meta property="og:url" content="https://check.tirenify.app/" />
   <meta property="og:site_name" content="Tirenify" />
-  <meta property="og:title" content="Tirenify | Check If Your Email Has Been Breached" />
-  <meta property="og:description" content="Enter your email and find out instantly if your data has been exposed in a known breach. Free, no signup, nothing stored. Know before attackers use it against you." />
+  <meta property="og:title" content="Tirenify - Know Before They Do" />
+  <meta property="og:description" content="Check if your email has been exposed in a data breach. Free, instant, nothing stored." />
   <meta property="og:locale" content="en_GB" />
-  <meta property="og:image" content="https://breachchecker-rho.vercel.app/og-image.png" />
+  <meta property="og:image" content="https://check.tirenify.app/og-preview.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Tirenify Breach Checker — Know if your data has been breached before attackers use it" />
   <meta property="og:image:type" content="image/png" />
-  <!-- TODO: Add og-image.png (1200x630px) to public/ folder.
-       Recommended: Dark background (#060b18), Tirenify wordmark,
-       headline "Check if your email has been breached",
-       breachchecker-rho.vercel.app URL, green checkmark or shield icon -->
 
   <!-- ═══════════════════════════════════════════
        TWITTER / X CARD
@@ -39,10 +37,10 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@tirenify" />
   <meta name="twitter:creator" content="@tirenify" />
-  <meta name="twitter:url" content="https://breachchecker-rho.vercel.app/" />
-  <meta name="twitter:title" content="Tirenify | Check If Your Email Has Been Breached" />
-  <meta name="twitter:description" content="Enter your email and find out instantly if your data has been exposed in a known breach. Free, no signup, nothing stored." />
-  <meta name="twitter:image" content="https://breachchecker-rho.vercel.app/og-image.png" />
+  <meta name="twitter:url" content="https://check.tirenify.app/" />
+  <meta name="twitter:title" content="Tirenify - Know Before They Do" />
+  <meta name="twitter:description" content="Check if your email has been exposed in a data breach. Free, instant, nothing stored." />
+  <meta name="twitter:image" content="https://check.tirenify.app/og-preview.png" />
   <meta name="twitter:image:alt" content="Tirenify Breach Checker — Know if your data has been breached before attackers use it" />
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-M0PQ33NZKC"></script>
@@ -83,6 +81,14 @@
 
     <div id="result" class="result">
       <p>Your breach results will appear here.</p>
+    </div>
+
+    <!-- Confirmation page (shown when the user arrives via an email link with ?token=) -->
+    <div id="confirmationContainer" style="display:none; text-align:center; padding: 32px 0;">
+      <div style="max-width: 520px; margin: 0 auto; background: rgba(15, 23, 42, 0.88); border: 1px solid rgba(148, 163, 184, 0.12); border-radius: 20px; padding: 32px;">
+        <h2 id="confirmTitle" style="color: #ffffff; margin-bottom: 12px; font-size: 24px;">Confirming your email…</h2>
+        <p id="confirmMessage" style="color: #94a3b8; font-size: 14px; line-height: 1.6;">Please wait while we confirm your subscription.</p>
+      </div>
     </div>
 <br>
 <br>

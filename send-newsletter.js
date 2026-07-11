@@ -10,7 +10,7 @@ const { createClient } = require("@supabase/supabase-js");
 const { Resend } = require("resend");
 const { buildNewsletterEmail } = require("./lib/emailTemplates");
 
-const FRONTEND_URL = (process.env.FRONTEND_URL || "https://breachchecker-rho.vercel.app").replace(/\/$/, "");
+const FRONTEND_URL = (process.env.FRONTEND_URL || "https://check.tirenify.app").replace(/\/$/, "");
 const SENDER_EMAIL = "hello@tirenify.app";
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -34,7 +34,7 @@ async function sendNewsletter() {
 
   if (!subject || !body) {
     console.log('Usage: node send-newsletter.js "<subject>" "<body>" ["<cta text>" "<cta link>"]');
-    console.log('Example: node send-newsletter.js "New Feature" "We just launched something cool" "Check it out" "https://tirenify.netlify.app"');
+    console.log('Example: node send-newsletter.js "New Feature" "We just launched something cool" "Check it out" "https://check.tirenify.app"');
     process.exit(1);
   }
 
