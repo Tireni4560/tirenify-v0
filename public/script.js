@@ -240,8 +240,8 @@ function showEmailOptIn(checkedEmail, resultBox) {
           message.textContent = `${data.message} Redirecting you to the homepage…`;
           message.style.color = "#22c55e";
         }
-        console.log("Success message displayed — redirecting to homepage in 7 seconds");
-        setTimeout(() => { window.location.href = "/"; }, 7000);
+        console.log("Success message displayed — redirecting to homepage in 3 seconds");
+        setTimeout(() => { window.location.href = "/"; }, 3000);
       } else {
         if (title) { title.textContent = "Confirmation failed"; title.style.color = "#f87171"; }
         if (message) message.textContent = data.message || "This confirmation link is invalid or has expired.";
