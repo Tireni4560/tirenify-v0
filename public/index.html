@@ -1,107 +1,54 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <!-- ═══════════════════════════════════════════
-       PRIMARY META
-  ═══════════════════════════════════════════ -->
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tirenify | Check If Your Email Has Been Breached</title>
-  <meta name="description" content="Enter your email and find out instantly if your data has been exposed in a known breach. Free, no signup, nothing stored. Know before attackers use it against you." />
-  <meta name="author" content="Daniel Adeleye" />
-  <meta name="robots" content="index, follow" />
-  <meta name="theme-color" content="#060b18" />
-  <link rel="canonical" href="https://check.tirenify.app/" />
-  <link rel="icon" type="image/png" href="/favicon.png" sizes="512x512" />
-  <link rel="apple-touch-icon" href="/favicon.png" />
-
-  <!-- ═══════════════════════════════════════════
-       OPEN GRAPH — WhatsApp, Facebook, LinkedIn,
-       Discord, Telegram, Slack
-  ═══════════════════════════════════════════ -->
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://check.tirenify.app/" />
-  <meta property="og:site_name" content="Tirenify" />
-  <meta property="og:title" content="Tirenify - Know Before They Do" />
-  <meta property="og:description" content="Check if your email has been exposed in a data breach. Free, instant, nothing stored." />
-  <meta property="og:locale" content="en_GB" />
-  <meta property="og:image" content="https://check.tirenify.app/og-preview.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Tirenify Breach Checker — Know if your data has been breached before attackers use it" />
-  <meta property="og:image:type" content="image/png" />
-
-  <!-- ═══════════════════════════════════════════
-       TWITTER / X CARD
-  ═══════════════════════════════════════════ -->
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:site" content="@tirenify" />
-  <meta name="twitter:creator" content="@tirenify" />
-  <meta name="twitter:url" content="https://check.tirenify.app/" />
-  <meta name="twitter:title" content="Tirenify - Know Before They Do" />
-  <meta name="twitter:description" content="Check if your email has been exposed in a data breach. Free, instant, nothing stored." />
-  <meta name="twitter:image" content="https://check.tirenify.app/og-preview.png" />
-  <meta name="twitter:image:alt" content="Tirenify Breach Checker — Know if your data has been breached before attackers use it" />
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-M0PQ33NZKC"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-M0PQ33NZKC');
-</script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <div class="container">
-    <div class="brand">Tirenify</div>
-
-    <h1>Know if your data's been breached before attackers use it</h1>
-    <p class="subtitle">
-      Peace of mind in seconds. Enter your email, get your result, know what to do next.
-    </p>
-    
-    <form id="breachForm" class="breach-form">
-      <label for="email">Email address</label>
-      <input
-        type="email"
-        id="email"
-        name="email"
-        placeholder="Enter your email address"
-        required
-      />
-      <p class="trust-note">
-        Enter your email → See if you've been breached → Get next steps
-      </p>
-      <button type="submit">Check My Email</button>
-    </form>
-<div id="spinner" class="spinner" style="display:none;"></div>
-
-    <div id="result" class="result">
-      <p>Your breach results will appear here.</p>
-    </div>
-
-    <!-- Confirmation page (shown when the user arrives via an email link with ?token=) -->
-    <div id="confirmationContainer" style="display:none; text-align:center; padding: 32px 0;">
-      <div style="max-width: 520px; margin: 0 auto; background: rgba(15, 23, 42, 0.88); border: 1px solid rgba(148, 163, 184, 0.12); border-radius: 20px; padding: 32px;">
-        <h2 id="confirmTitle" style="color: #ffffff; margin-bottom: 12px; font-size: 24px;">Confirming your email…</h2>
-        <p id="confirmMessage" style="color: #94a3b8; font-size: 14px; line-height: 1.6;">Please wait while we confirm your subscription.</p>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#060b18" />
+    <title>Safeyard by Tirenify — Know Before They Do</title>
+    <meta
+      name="description"
+      content="Free, no-account digital safety hub. Check if your email was in a data breach and use everyday security tools that run entirely on your device."
+    />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://check.tirenify.app/" />
+    <link rel="icon" type="image/png" href="/favicon.png" sizes="512x512" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Safeyard by Tirenify" />
+    <meta property="og:url" content="https://check.tirenify.app/" />
+    <meta property="og:title" content="Safeyard by Tirenify — Know Before They Do" />
+    <meta
+      property="og:description"
+      content="Free, no-account digital safety hub with Breach Guard at the front door."
+    />
+    <meta property="og:locale" content="en_GB" />
+    <meta property="og:image" content="https://check.tirenify.app/og-preview.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Safeyard by Tirenify — Know Before They Do" />
+    <meta
+      name="twitter:description"
+      content="Free, no-account digital safety hub with Breach Guard at the front door."
+    />
+    <meta name="twitter:image" content="https://check.tirenify.app/og-preview.png" />
+    <script type="module" crossorigin src="/assets/index-B4bvVGSm.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-CiBELqhN.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-D85sdD9H.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.5;">
+        <h1 style="font-size: 1.5rem;">Safeyard by Tirenify needs JavaScript</h1>
+        <p>
+          Safeyard runs in your browser to keep your data private. Please enable
+          JavaScript to use the breach check and the security tools, then reload
+          this page.
+        </p>
       </div>
-    </div>
-<br>
-<br>
-    <p class="footer-text">Know your exposure. Take action. Stay ahead.</p>
-    <div class="social-link">
-      <a href="https://x.com/tirenify" target="_blank" rel="noopener noreferrer">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.911-5.622Zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-        </svg>
-        Follow @tirenify for more updates      </a>
-    </div>
-  </div>
-
-  <script src="script.js"></script>
-</body>
+    </noscript>
+  </body>
 </html>

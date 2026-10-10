@@ -7,11 +7,73 @@ const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 const { Resend } = require("resend");
 const { buildWelcomeEmail, buildConfirmedEmail } = require("./lib/emailTemplates");
+const { normalizeAnalytics } = require("./lib/breach.js");
 
 const app = express();
 const PORT = 3000;
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://check.tirenify.app";
+// ─────────────────────────────────────────────────────────────
+// APP_URL — the ONE source for every absolute URL (canonical, og:*, email
+// links, redirect target). Defaults to the current host; set APP_URL to move
+// the product later. A permanent 301 from the legacy host check.tirenify.app
+// to APP_URL is active ONLY when APP_URL points at a different host, and it
+// preserves the full path + query so existing confirm/unsubscribe links work.
+// ─────────────────────────────────────────────────────────────
+const APP_URL = (process.env.APP_URL || "https://check.tirenify.app").replace(/\/$/, "");
+const LEGACY_HOST = "check.tirenify.app";
+let APP_URL_HOST = LEGACY_HOST;
+try {
+  APP_URL_HOST = new URL(APP_URL).host;
+} catch {
+  /* keep default host if APP_URL is malformed */
+}
+if (APP_URL_HOST && APP_URL_HOST !== LEGACY_HOST) {
+  app.use((req, res, next) => {
+    const host = String(req.headers.host || "").toLowerCase();
+    if (host === LEGACY_HOST) {
+      // req.originalUrl keeps the path AND the full query string.
+      return res.redirect(301, `${APP_URL}${req.originalUrl}`);
+    }
+    next();
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// SECURITY HEADERS (Phase 8 hardening). The CSP enforces the
+// zero-dependency rule: no external scripts, fonts, images or APIs.
+// Both the breach check and the email subscription POST to our own
+// origin, so connect-src 'self' covers them.
+// ─────────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  // Camera only on the QR scanner route (added in a later phase); everywhere
+  // else it is denied. Everything else is locked down.
+  const isQr = req.path.startsWith("/tools/qr-code");
+  const camera = isQr ? "(self)" : "()";
+  res.setHeader("Permissions-Policy", `camera=${camera}, microphone=(), geolocation=(), payment=(), usb=()`);
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
+    "img-src 'self' data: blob:",
+    "connect-src 'self'",
+    "manifest-src 'self'",
+  ].join("; ");
+  res.setHeader("Content-Security-Policy", csp);
+  next();
+});
+
+
+const FRONTEND_URL = (process.env.FRONTEND_URL || APP_URL).replace(/\/$/, "");
 const SENDER_EMAIL = "hello@tirenify.app";
 
 // ─────────────────────────────────────────────────────────────
@@ -35,92 +97,69 @@ console.log(
 console.log("─" + "─".repeat(50) + "\n");
 
 // ─────────────────────────────────────────────────────────────
-// VALIDATION: Check required environment variables
+// OPTIONAL SERVICES: Supabase + Resend back the email-subscription flow only.
+// The breach check needs NEITHER, so the server must start without them.
+// When env is missing we keep the clients null and the subscription routes
+// reply with a friendly, human message instead of crashing the process.
 // ─────────────────────────────────────────────────────────────
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
-  console.error(
-    "❌ FATAL: Missing Supabase credentials. Check .env file in:",
-    path.resolve(__dirname, ".env")
-  );
-  console.error("Required variables: SUPABASE_URL, SUPABASE_ANON_KEY");
-  process.exit(1);
-}
-
-// Validate URL format
-const urlRegex = /^https:\/\/[\w-]+\.supabase\.co$/;
-if (!urlRegex.test(process.env.SUPABASE_URL)) {
-  console.error(
-    "❌ FATAL: Invalid SUPABASE_URL format. Expected: https://<project-id>.supabase.co"
-  );
-  console.error("Got:", process.env.SUPABASE_URL);
-  process.exit(1);
-}
-
-console.log("✅ Configuration validated successfully.\n");
-
-// ─────────────────────────────────────────────────────────────
-// INITIALIZE: Supabase and Resend clients
-// ─────────────────────────────────────────────────────────────
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseConfigured = Boolean(
+  process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY
 );
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-// ─────────────────────────────────────────────────────────────
-// CONNECTIVITY TEST: Test Supabase connection on startup
-// ─────────────────────────────────────────────────────────────
-async function testSupabaseConnection() {
-  console.log("🔍 Testing Supabase connectivity...");
-  try {
-    const { data, error } = await supabase
-      .from("subscriptions")
-      .select("id")
-      .limit(1);
-
-    if (error) {
-      console.error("❌ CONNECTIVITY TEST FAILED");
-      console.error("Error code:", error.code);
-      console.error("Error message:", error.message);
-      if (error.details) console.error("Error details:", error.details);
-      if (error.hint) console.error("Error hint:", error.hint);
-      console.error("\nFull error object:");
-      console.error(JSON.stringify(error, null, 2));
-      return false;
-    }
-
-    console.log("✅ Supabase connection successful!");
-    console.log(`   Found ${data?.length || 0} subscriber(s) in test query.\n`);
-    return true;
-  } catch (err) {
-    console.error("❌ CONNECTIVITY TEST FAILED (Exception)");
-    console.error("Error message:", err.message);
-    console.error("Error code:", err.code);
-    console.error("Error type:", err.constructor.name);
-    if (err.cause) {
-      console.error("Caused by:", err.cause);
-    }
-    console.error("\nStack trace:");
-    console.error(err.stack);
-    console.error("\nFull error object:");
-    console.error(JSON.stringify(err, null, 2));
-    return false;
-  }
+let supabase = null;
+let resend = null;
+if (supabaseConfigured) {
+  supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+  resend = new Resend(process.env.RESEND_API_KEY);
+  console.log("✅ Supabase + Resend configured (email subscription enabled).\n");
+} else {
+  console.warn(
+    "⚠️  Supabase/Resend not configured — the breach check still works, but the " +
+      "email subscription is disabled. Set SUPABASE_URL, SUPABASE_ANON_KEY and " +
+      "RESEND_API_KEY (see .env.example) to enable it.\n"
+  );
 }
 
-// Run connectivity test and store result
-let supabaseConnected = false;
-testSupabaseConnection().then((result) => {
-  supabaseConnected = result;
-  console.log(
-    "\n" + (result ? "✅" : "❌") + " Supabase ready for requests.\n"
-  );
-});
+// ─────────────────────────────────────────────────────────────
+// CONNECTIVITY TEST (subscription only) — skipped when not configured.
+// ─────────────────────────────────────────────────────────────
+if (supabaseConfigured) {
+  supabase
+    .from("subscriptions")
+    .select("id")
+    .limit(1)
+    .then(({ error }) => {
+      if (error) {
+        console.error("⚠️  Supabase connectivity test failed:", error.message);
+      } else {
+        console.log("✅ Supabase connectivity OK.");
+      }
+    })
+    .catch((err) => {
+      console.error("⚠️  Supabase connectivity test threw:", err?.message || err);
+    });
+}
 
 // Middleware
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"), { index: "index.html" }));
+
+// Always serve the app shell at the site root instead of exposing the directory.
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// Deep links: express.static above already serves the per-route index.html
+// snapshots produced by scripts/gen-meta.mjs for known paths. This is the SPA
+// fallback for any other GET that isn't a file and isn't an API route — it
+// serves the root shell so client-side routing takes over.
+app.use((req, res, next) => {
+  if (req.method !== "GET" || req.path.startsWith("/api/")) return next();
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 const INVALID_EMAIL_MESSAGE = "This email doesn't appear to be valid. Please check and try again.";
 
@@ -128,10 +167,20 @@ const INVALID_EMAIL_MESSAGE = "This email doesn't appear to be valid. Please che
 // work when it sends the confirmation email.
 const emailShapeRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Dev-only diagnostics. In development we print the error TYPE and the
+// upstream HTTP status to the terminal so the route is easy to debug. We NEVER
+// log the email or the response body — here or anywhere. In production this
+// logs nothing (the caller stays silent too).
+const IS_DEV = process.env.NODE_ENV !== "production";
+function devLog(...args) {
+  if (IS_DEV) console.log("[breach-check]", ...args);
+}
+
 // Fetches from the breach API with retries: transient network failures
 // (connect timeouts, DNS hiccups) are retried with a short backoff before
 // giving up. HTTP error responses are returned as-is — only thrown network
-// errors trigger a retry.
+// errors trigger a retry. Timeouts (AbortSignal) throw a TimeoutError which we
+// tag so the handler can distinguish it from a generic upstream failure.
 async function fetchBreachApiWithRetry(url, options, attempts = 3) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -142,7 +191,11 @@ async function fetchBreachApiWithRetry(url, options, attempts = 3) {
       });
     } catch (err) {
       lastError = err;
-      console.error(`⚠️  Breach API attempt ${attempt}/${attempts} failed:`, err.cause?.message || err.message);
+      if (err && (err.name === "TimeoutError" || err.name === "AbortError")) {
+        err.__timeout = true;
+      }
+      // Never log the URL (it contains the email) — only the failure reason.
+      devLog(`attempt ${attempt}/${attempts} failed:`, err.cause?.message || err.message);
       if (attempt < attempts) {
         await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
@@ -151,54 +204,154 @@ async function fetchBreachApiWithRetry(url, options, attempts = 3) {
   throw lastError;
 }
 
-// POST /api/email/check-breach — no validation step; the email goes straight
-// to XposedOrNot, which handles malformed input itself.
-async function handleCheckBreach(req, res) {
-  const { email } = req.body;
+// POST /api/breach-check — validates the email, applies a per-IP rate limit and
+// in-memory cache, calls XposedOrNot /v1/breach-analytics, and returns a
+// normalized result. The email is never logged (only ever in the POST body).
+//
+// Distinct error codes so the UI can show a specific, friendly message each:
+//   invalid_email | rate_limited | upstream_unavailable | timeout | parse_error
+async function handleBreachCheck(req, res) {
+  const { email } = req.body || {};
 
-  if (!email || typeof email !== "string") {
-    return res.status(400).json({ message: "Email is required." });
+  if (typeof email !== "string" || !email.trim()) {
+    devLog("invalid_email: missing/empty email");
+    return res.status(400).json({ ok: false, error: "invalid_email", message: "Email is required." });
+  }
+  const normalized = email.trim().toLowerCase();
+  if (normalized.length > 255 || !breachEmailRegex.test(normalized)) {
+    devLog("invalid_email: failed format/length check");
+    return res.status(400).json({ ok: false, error: "invalid_email", message: INVALID_EMAIL_MESSAGE });
+  }
+
+  // Per-IP rate limit (in-memory only; XposedOrNot free tier is ~1 req/sec).
+  const ip =
+    (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+    req.socket?.remoteAddress ||
+    "unknown";
+  if (rateLimit(ip)) {
+    devLog("rate_limited: per-IP limit exceeded");
+    return res.status(429).json({
+      ok: false,
+      error: "rate_limited",
+      message: "We're busy right now - please wait a few seconds and try again.",
+    });
+  }
+
+  // Optional in-memory cache keyed by a hash of the email (never the email
+  // itself). ~10 min TTL. Never persisted; cleared on deploy/restart.
+  const key = hashEmail(normalized);
+  const cached = responseCache.get(key);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return res.json({ ok: true, result: cached.result });
   }
 
   try {
-    console.log("Checking email:", email);
-
-    const apiUrl = `https://api.xposedornot.com/v1/check-email/${encodeURIComponent(email)}`;
+    const apiUrl = `https://api.xposedornot.com/v1/breach-analytics?email=${encodeURIComponent(normalized)}`;
     const headers = process.env.EXPOSED_ORKNOT_API_KEY
-      ? { "api-key": process.env.EXPOSED_ORKNOT_API_KEY }
-      : undefined;
+      ? { "api-key": process.env.EXPOSED_ORKNOT_API_KEY, Accept: "application/json" }
+      : { Accept: "application/json" };
 
     const response = await fetchBreachApiWithRetry(apiUrl, { headers });
-    const data = await response.json();
 
-    console.log("Response status:", response.status);
-
-    if (!response.ok) {
-      return res.status(response.status).json({ message: data.message || "API error occurred." });
+    // Upstream rate-limited us (429) — surface it as our own rate-limited state.
+    if (response.status === 429) {
+      devLog("rate_limited: upstream returned 429");
+      return res.status(429).json({
+        ok: false,
+        error: "rate_limited",
+        message: "We're busy right now - please wait a few seconds and try again.",
+      });
     }
 
-    res.json(data);
+    // Other non-2xx (5xx from XposedOrNot, etc.) — the database is unavailable.
+    if (!response.ok) {
+      devLog(`upstream_unavailable: upstream status ${response.status}`);
+      return res.status(502).json({
+        ok: false,
+        error: "upstream_unavailable",
+        message: "The breach database is temporarily unavailable. Please try again shortly.",
+      });
+    }
+
+    const data = await response.json().catch(() => null);
+    if (!data || typeof data !== "object") {
+      devLog(`parse_error: empty/unparseable body (status ${response.status})`);
+      return res.status(502).json({
+        ok: false,
+        error: "parse_error",
+        message: "We couldn't read the breach data just now. Please try again shortly.",
+      });
+    }
+
+    // 200 with no breaches for unknown addresses is a valid "not found" and is
+    // normalized to found:false (the UI shows the "Good news" state).
+    const result = normalizeAnalytics(data);
+    if (responseCache.size > 2000) responseCache.clear();
+    responseCache.set(key, { at: Date.now(), result });
+    return res.json({ ok: true, result });
   } catch (error) {
-    console.error("Error contacting breach API (all retries exhausted):", error);
-    res.status(504).json({
-      message: "The breach database is temporarily unreachable. Please try again in a moment.",
+    if (error && error.__timeout) {
+      devLog("timeout: upstream did not respond within 15s (all retries exhausted)");
+      return res.status(504).json({
+        ok: false,
+        error: "timeout",
+        message: "The check took too long. Please try again in a moment.",
+      });
+    }
+    devLog("upstream_unavailable: network error contacting breach API");
+    return res.status(502).json({
+      ok: false,
+      error: "upstream_unavailable",
+      message: "The breach service is temporarily unreachable. Please try again in a moment.",
     });
   }
 }
 
-app.post("/api/email/check-breach", handleCheckBreach);
-app.post("/check-breach", handleCheckBreach); // legacy alias for existing frontend
+// Rate limit + cache state for /api/breach-check.
+const breachEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const RATE_WINDOW_MS = 60 * 1000;
+const RATE_MAX = 8;
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const rateBuckets = new Map();
+const responseCache = new Map();
+
+function rateLimit(ip) {
+  const now = Date.now();
+  let bucket = rateBuckets.get(ip);
+  if (!bucket || now >= bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    rateBuckets.set(ip, bucket);
+  }
+  bucket.count += 1;
+  if (rateBuckets.size > 5000) {
+    for (const [k, v] of rateBuckets) if (now >= v.resetAt) rateBuckets.delete(k);
+  }
+  return bucket.count > RATE_MAX;
+}
+
+function hashEmail(email) {
+  return crypto.createHash("sha256").update(email.toLowerCase()).digest("hex");
+}
+
+app.post("/api/breach-check", handleBreachCheck);
 
 // POST /api/email/subscribe — validates the email, upserts a user + pending
 // subscription, and sends a welcome/confirmation email via Resend.
 async function handleSubscribe(req, res) {
   const { email, preferences = {} } = req.body;
 
-  console.log("\n✉️  SUBSCRIPTION REQUEST RECEIVED");
-  console.log("Email:", email);
+  console.log("\nSubscription request received.");
+  // The email is intentionally NOT logged (privacy by design).
 
   if (!email || typeof email !== "string" || !emailShapeRegex.test(email)) {
     return res.status(400).json({ message: INVALID_EMAIL_MESSAGE });
+  }
+
+  if (!supabaseConfigured || !supabase) {
+    return res.status(503).json({
+      message:
+        "Email updates are not available right now. The breach check still works — your results are above.",
+    });
   }
 
   try {
@@ -326,7 +479,7 @@ async function handleSubscribe(req, res) {
       info: "Check your inbox for a confirmation email to complete your subscription.",
     });
   } catch (err) {
-    console.error("⚠️  UNCAUGHT EXCEPTION in subscribe for email:", email, err);
+    console.error("⚠️  UNCAUGHT EXCEPTION in subscribe (email redacted):", err);
     return res.status(500).json({ message: "Server error. Please try again." });
   }
 }
@@ -353,6 +506,13 @@ async function handleConfirmEmail(req, res) {
 
   if (!token || typeof token !== "string") {
     return res.status(400).json({ success: false, message: "Confirmation token missing." });
+  }
+
+  if (!supabaseConfigured || !supabase) {
+    return res.status(503).json({
+      success: false,
+      message: "Email confirmation is not available right now.",
+    });
   }
 
   const { data: user } = await supabase
@@ -404,7 +564,7 @@ async function handleConfirmEmail(req, res) {
       sendStatus = resendResult?.error ? "failed" : "sent";
       if (resendResult?.error) errorMessage = resendResult.error.message;
       if (sendStatus === "sent") {
-        console.log("✅ Confirmation email sent to:", user.email);
+        console.log("Confirmation email sent.");
       }
     } catch (sendError) {
       console.error("❌ Confirmed email send failed:", sendError.message);
@@ -434,6 +594,7 @@ app.get("/api/email/confirm", handleConfirmEmail);
 // Marks the subscription for an email as unsubscribed. Returns true if a
 // matching user existed (idempotent — repeat calls are harmless).
 async function unsubscribeEmail(email) {
+  if (!supabaseConfigured || !supabase) return false;
   const { data: user } = await supabase
     .from("users")
     .select("id")
@@ -475,4 +636,20 @@ app.get("/api/email/unsubscribe", async (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
+});
+
+// 404 for anything unmatched (e.g. unknown API paths). HTML routes are caught
+// by the SPA fallback above, so this mainly serves JSON API misses.
+app.use((req, res) => {
+  if (req.path.startsWith("/api/")) {
+    return res.status(404).json({ ok: false, error: "not-found", message: "Not found." });
+  }
+  res.status(404).sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// Central error handler — never leak internals to the client.
+app.use((err, req, res, next) => {
+  console.error("Unhandled server error:", err?.message || err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ ok: false, error: "server", message: "Something went wrong. Please try again." });
 });

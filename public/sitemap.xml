@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemap.google.com/schemas/sitemap/0.9">
+  <url>
+    <loc>https://check.tirenify.app/</loc>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://check.tirenify.app/breach-guard</loc>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://check.tirenify.app/help</loc>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://check.tirenify.app/privacy</loc>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://check.tirenify.app/terms</loc>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://check.tirenify.app/about</loc>
+    <changefreq>monthly</changefreq>
+  </url>
+</urlset>
