@@ -8,6 +8,7 @@ const { createClient } = require("@supabase/supabase-js");
 const { Resend } = require("resend");
 const { buildWelcomeEmail, buildConfirmedEmail } = require("./lib/emailTemplates");
 const { normalizeAnalytics } = require("./lib/breach.js");
+const { runBreachCheck, INVALID_EMAIL_MESSAGE } = require("./lib/breach-check.js");
 
 const app = express();
 const PORT = 3000;
@@ -161,176 +162,25 @@ app.use((req, res, next) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-const INVALID_EMAIL_MESSAGE = "This email doesn't appear to be valid. Please check and try again.";
+// (INVALID_EMAIL_MESSAGE comes from lib/breach-check.js shared core.)
 
 // Basic shape check for subscriptions; Resend does the real deliverability
 // work when it sends the confirmation email.
 const emailShapeRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Dev-only diagnostics. In development we print the error TYPE and the
-// upstream HTTP status to the terminal so the route is easy to debug. We NEVER
-// log the email or the response body — here or anywhere. In production this
-// logs nothing (the caller stays silent too).
-const IS_DEV = process.env.NODE_ENV !== "production";
-function devLog(...args) {
-  if (IS_DEV) console.log("[breach-check]", ...args);
-}
+// (Breach-check retry/dev-log helpers now live in lib/breach-check.js, shared
+// with the Vercel function. `crypto` is still used below for tokens.)
 
-// Fetches from the breach API with retries: transient network failures
-// (connect timeouts, DNS hiccups) are retried with a short backoff before
-// giving up. HTTP error responses are returned as-is — only thrown network
-// errors trigger a retry. Timeouts (AbortSignal) throw a TimeoutError which we
-// tag so the handler can distinguish it from a generic upstream failure.
-async function fetchBreachApiWithRetry(url, options, attempts = 3) {
-  let lastError;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    try {
-      return await fetch(url, {
-        ...options,
-        signal: AbortSignal.timeout(15000),
-      });
-    } catch (err) {
-      lastError = err;
-      if (err && (err.name === "TimeoutError" || err.name === "AbortError")) {
-        err.__timeout = true;
-      }
-      // Never log the URL (it contains the email) — only the failure reason.
-      devLog(`attempt ${attempt}/${attempts} failed:`, err.cause?.message || err.message);
-      if (attempt < attempts) {
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-      }
-    }
-  }
-  throw lastError;
-}
-
-// POST /api/breach-check — validates the email, applies a per-IP rate limit and
-// in-memory cache, calls XposedOrNot /v1/breach-analytics, and returns a
-// normalized result. The email is never logged (only ever in the POST body).
-//
-// Distinct error codes so the UI can show a specific, friendly message each:
-//   invalid_email | rate_limited | upstream_unavailable | timeout | parse_error
+// POST /api/breach-check — thin Express adapter over the shared core in
+// lib/breach-check.js (the SAME core the Vercel function api/breach-check.js
+// uses). The email is never logged (only ever in the POST body).
 async function handleBreachCheck(req, res) {
-  const { email } = req.body || {};
-
-  if (typeof email !== "string" || !email.trim()) {
-    devLog("invalid_email: missing/empty email");
-    return res.status(400).json({ ok: false, error: "invalid_email", message: "Email is required." });
-  }
-  const normalized = email.trim().toLowerCase();
-  if (normalized.length > 255 || !breachEmailRegex.test(normalized)) {
-    devLog("invalid_email: failed format/length check");
-    return res.status(400).json({ ok: false, error: "invalid_email", message: INVALID_EMAIL_MESSAGE });
-  }
-
-  // Per-IP rate limit (in-memory only; XposedOrNot free tier is ~1 req/sec).
   const ip =
     (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
     req.socket?.remoteAddress ||
     "unknown";
-  if (rateLimit(ip)) {
-    devLog("rate_limited: per-IP limit exceeded");
-    return res.status(429).json({
-      ok: false,
-      error: "rate_limited",
-      message: "We're busy right now - please wait a few seconds and try again.",
-    });
-  }
-
-  // Optional in-memory cache keyed by a hash of the email (never the email
-  // itself). ~10 min TTL. Never persisted; cleared on deploy/restart.
-  const key = hashEmail(normalized);
-  const cached = responseCache.get(key);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-    return res.json({ ok: true, result: cached.result });
-  }
-
-  try {
-    const apiUrl = `https://api.xposedornot.com/v1/breach-analytics?email=${encodeURIComponent(normalized)}`;
-    const headers = process.env.EXPOSED_ORKNOT_API_KEY
-      ? { "api-key": process.env.EXPOSED_ORKNOT_API_KEY, Accept: "application/json" }
-      : { Accept: "application/json" };
-
-    const response = await fetchBreachApiWithRetry(apiUrl, { headers });
-
-    // Upstream rate-limited us (429) — surface it as our own rate-limited state.
-    if (response.status === 429) {
-      devLog("rate_limited: upstream returned 429");
-      return res.status(429).json({
-        ok: false,
-        error: "rate_limited",
-        message: "We're busy right now - please wait a few seconds and try again.",
-      });
-    }
-
-    // Other non-2xx (5xx from XposedOrNot, etc.) — the database is unavailable.
-    if (!response.ok) {
-      devLog(`upstream_unavailable: upstream status ${response.status}`);
-      return res.status(502).json({
-        ok: false,
-        error: "upstream_unavailable",
-        message: "The breach database is temporarily unavailable. Please try again shortly.",
-      });
-    }
-
-    const data = await response.json().catch(() => null);
-    if (!data || typeof data !== "object") {
-      devLog(`parse_error: empty/unparseable body (status ${response.status})`);
-      return res.status(502).json({
-        ok: false,
-        error: "parse_error",
-        message: "We couldn't read the breach data just now. Please try again shortly.",
-      });
-    }
-
-    // 200 with no breaches for unknown addresses is a valid "not found" and is
-    // normalized to found:false (the UI shows the "Good news" state).
-    const result = normalizeAnalytics(data);
-    if (responseCache.size > 2000) responseCache.clear();
-    responseCache.set(key, { at: Date.now(), result });
-    return res.json({ ok: true, result });
-  } catch (error) {
-    if (error && error.__timeout) {
-      devLog("timeout: upstream did not respond within 15s (all retries exhausted)");
-      return res.status(504).json({
-        ok: false,
-        error: "timeout",
-        message: "The check took too long. Please try again in a moment.",
-      });
-    }
-    devLog("upstream_unavailable: network error contacting breach API");
-    return res.status(502).json({
-      ok: false,
-      error: "upstream_unavailable",
-      message: "The breach service is temporarily unreachable. Please try again in a moment.",
-    });
-  }
-}
-
-// Rate limit + cache state for /api/breach-check.
-const breachEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const RATE_WINDOW_MS = 60 * 1000;
-const RATE_MAX = 8;
-const CACHE_TTL_MS = 10 * 60 * 1000;
-const rateBuckets = new Map();
-const responseCache = new Map();
-
-function rateLimit(ip) {
-  const now = Date.now();
-  let bucket = rateBuckets.get(ip);
-  if (!bucket || now >= bucket.resetAt) {
-    bucket = { count: 0, resetAt: now + RATE_WINDOW_MS };
-    rateBuckets.set(ip, bucket);
-  }
-  bucket.count += 1;
-  if (rateBuckets.size > 5000) {
-    for (const [k, v] of rateBuckets) if (now >= v.resetAt) rateBuckets.delete(k);
-  }
-  return bucket.count > RATE_MAX;
-}
-
-function hashEmail(email) {
-  return crypto.createHash("sha256").update(email.toLowerCase()).digest("hex");
+  const { status, body } = await runBreachCheck({ email: (req.body || {}).email, ip });
+  return res.status(status).json(body);
 }
 
 app.post("/api/breach-check", handleBreachCheck);

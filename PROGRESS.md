@@ -112,6 +112,34 @@ masked summaries only, dashboard habits key `safeyard:habits` lives in the route
 tokens in `src/styles.css` (@theme, dark `#060b18`, self-hosted Sora/Manrope,
 `surface`/`bg-brand` utilities, print stylesheet started); brand in
 `src/config/brand.js`; score in `src/lib/score.js` (breach 50/habits 30/checkup 20,
+## DEPLOY NOTES (Vercel, static public/ + serverless API — updated 2026-10-10)
+
+- New `api/breach-check.js` serverless function (POST only; GET/etc → 405). It
+  calls the SAME shared core `lib/breach-check.js` that local Express uses, so
+  validation, per-IP rate limit, 10-min cache, XposedOrNot call,
+  `normalizeAnalytics`, and the five error codes
+  (`invalid_email`/`rate_limited`/`upstream_unavailable`/`timeout`/`parse_error`)
+  cannot drift. Email never logged. No `app.listen` in the function.
+- `server.js` refactored to the shared core: `handleBreachCheck` is now a thin
+  Express adapter (`runBreachCheck` → status/body). Local `npm run dev` /
+  `npm start` keep `POST /api/breach-check` on Express unchanged. Dead
+  duplicates removed from server.js (old retry/devLog/rate-limit/cache blocks);
+  `INVALID_EMAIL_MESSAGE` now imported from the shared core (subscribe route
+  uses the same text as before).
+- `vercel.json` now maps ONLY `api/breach-check.js` → `@vercel/node` (no routes
+  override, no outputDirectory) so Vercel serves the static SPA from `public/`
+  as Output Directory and routes `/api/breach-check` to the function. The old
+  "route everything through server.js" approach is REPLACED by this.
+- Vercel project settings: Output Directory = `public`; Build Command =
+  `echo skip` (committed `public/` is used — no vite rebuild); Install Command =
+  default. Env: `EXPOSED_ORKNOT_API_KEY` optional; no Supabase/Resend needed for
+  the check.
+- Verified locally (server started then stopped, no stray jobs): shared core
+  returns 400 `invalid_email` for bad/empty email; function returns 405 for GET
+  and 400 for bad POST; Express `GET /` → 200 and `POST /api/breach-check`
+  (bad email) → 400. Unit tests 62/62 pass. No live upstream call, no DB write.
+
+
 ## DEPLOY NOTES (Vercel — added 2026-10-10, no commit/push per rules)
 
 - `server.js` now exports the Express app (`module.exports = app`) and only calls
@@ -126,7 +154,8 @@ tokens in `src/styles.css` (@theme, dark `#060b18`, self-hosted Sora/Manrope,
   the function. No breach/subscription/static logic changed.
 - Vercel project settings: Output Directory = empty; Build Command = `echo skip`
   (or empty) so the committed `public/` output is used — do NOT run a full vite
-  rebuild on Vercel. Install Command = default. Env vars: `APP_URL`,
+  rebuild on Vercel. (SUPERSEDED 2026-10-10: Output Directory is now `public`
+  with the serverless `api/breach-check.js`; see the note above.) Install Command = default. Env vars: `APP_URL`,
   `VITE_APP_URL`, `FRONTEND_URL` + optional `SUPABASE_*`, `RESEND_API_KEY`,
   `EXPOSED_ORKNOT_API_KEY` (same as RUN.md).
 - Verified locally (2026-10-10, server started then stopped, no stray process):
