@@ -1,7 +1,18 @@
-// On-device storage — masked summaries only. Never the raw email, never the
-// full results. All keys are namespaced "safeyard:" and cleared by "Clear data".
-const KEY = "safeyard:breach-history";
-const EVENT = "safeyard:data-changed";
+// COMPAT LAYER — do not change behavior. The breach-check result components and
+// the dashboard read/write through these names; they now delegate to the shared
+// storage module (src/lib/storage.js). Key ("safeyard:breach-history"), row
+// shape and masked-summary format are UNCHANGED (additive migration only).
+import {
+  getItem,
+  setItem,
+  clearAll as clearStorageAll,
+  storageStatus,
+  onSafeyardDataChange,
+  DATA_CHANGED_EVENT,
+} from "./storage.js";
+
+const KEY = "breach-history";
+const EVENT = DATA_CHANGED_EVENT;
 
 /** d***@gmail.com style mask. */
 export function maskEmail(email) {
@@ -11,22 +22,8 @@ export function maskEmail(email) {
 }
 
 function read() {
-  try {
-    const raw = localStorage.getItem(KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function write(list) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list));
-    window.dispatchEvent(new Event(EVENT));
-  } catch {
-    /* storage full or blocked — ignore, results still show in the page */
-  }
+  const list = getItem(KEY, []);
+  return Array.isArray(list) ? list : [];
 }
 
 /** Save a masked summary row for a check. Keeps the latest 10. */
@@ -40,7 +37,7 @@ export function saveBreachSummary({ email, breachCount, dataTypes, riskLevel, ch
     at: checkedAt || new Date().toISOString(),
   };
   const next = [row, ...list.filter((r) => !(r.masked === row.masked && r.count === row.count))].slice(0, 10);
-  write(next);
+  setItem(KEY, next);
   return row;
 }
 
@@ -49,27 +46,15 @@ export function getBreachHistory() {
 }
 
 export function clearAllSafeyardData() {
-  try {
-    const keys = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith("safeyard:")) keys.push(k);
-    }
-    keys.forEach((k) => localStorage.removeItem(k));
-    window.dispatchEvent(new Event(EVENT));
-  } catch {
-    /* ignore */
-  }
+  clearStorageAll();
+}
+
+export function storageState() {
+  return storageStatus();
 }
 
 export function useSafeyardDataVersion(subscribe) {
-  // Tiny subscription helper (framework-free so it can be unit-tested).
-  // Calling the returned function registers the listener and hands back a
-  // cleanup function for useEffect: useEffect(() => useSafeyardDataVersion(cb)(), []).
-  return subscribe
-    ? () => {
-        window.addEventListener(EVENT, subscribe);
-        return () => window.removeEventListener(EVENT, subscribe);
-      }
-    : () => () => {};
+  return onSafeyardDataChange(subscribe);
 }
+
+export { EVENT };

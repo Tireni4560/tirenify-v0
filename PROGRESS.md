@@ -99,6 +99,127 @@ curl.exe -X POST http://localhost:5173/api/breach-check -H "Content-Type: applic
 
 ---
 
+## PHASE A — PLAN (foundation; tools themselves land in Phase B+)
+
+Inventory (done, from reading + `git grep`): routes in `src/config/routes.js`
+(status live/planned, app + `scripts/gen-meta.mjs` read it); in-house router
+(`src/lib/router.jsx`: Link/navigate/matchPath); per-route head via `applyHead`
+(`src/lib/head.js`) + build-time snapshots via gen-meta; shell
+(`src/components/AppShell.jsx`: sidebar/bottom bar/header/footer); UI atoms in
+`src/components/ui.jsx` (PageHeader/Chip/LetterAvatar/Skeleton) + dashboard-local
+ScoreRing; storage in `src/lib/device-storage.js` (`safeyard:breach-history`,
+masked summaries only, dashboard habits key `safeyard:habits` lives in the route);
+tokens in `src/styles.css` (@theme, dark `#060b18`, self-hosted Sora/Manrope,
+`surface`/`bg-brand` utilities, print stylesheet started); brand in
+`src/config/brand.js`; score in `src/lib/score.js` (breach 50/habits 30/checkup 20,
+tested); tests in `tests/*.test.js` (33, node env); protected areas per Standing
+rules above — no auth/profile code in the live app (it all lived in
+`tirenify-src/`, now deleted).
+
+Build order (each step: write code, keep build+tests green):
+1. `src/lib/storage.js` (+ keep `device-storage.js` as a thin compat re-export so
+   the breach summary format/behavior is untouched) — namespaced `safeyard:` keys,
+   schema version, safe access, additive migration, getAll/export/import/clear,
+   per-category clear, size report.
+2. Helpers: `src/lib/random.js` (+ tests), `src/lib/validators.js` (+ tests),
+   `src/lib/formatters.js` (+ tests), `src/lib/hooks.js` (useLocalState,
+   useDebounce, useClipboard, useOnlineStatus, useWorker, usePageMeta).
+3. Registry `src/content/tools.js` (empty tool list in Phase A — no tool exists
+   yet and unbuilt tools stay OUT of registry/nav/sitemap; registry ships with
+   schema + query helpers + unit tests). Categories from brand.js CATEGORIES.
+4. Route generation: extend `src/config/routes.js` with REAL new pages only
+   (/tools, /tools/:slug with registry binding, /my-data, /report, /checkup stays
+   planned until Phase E); App.jsx renders data-driven from registry (lazy chunks
+   per route; focus-to-H1 on route change; per-route error boundary).
+5. UI kit `src/components/ui-kit.jsx` (Button…ProgressBar per scope 6c; reuse
+   existing PageHeader/Skeleton), `src/components/tool-page.jsx` (H1, purpose,
+   offline badges, aria-live result, How-it-works accordion, Limits panel, Tips,
+   Related, Next steps, copy/print/export actions), engines
+   (`src/components/engines.jsx` + pure logic where testable; GuideRenderer never
+   uses dangerouslySetInnerHTML).
+6. Shell completion in AppShell.jsx (grouped sidebar, bottom bar + More sheet,
+   footer, global search palette Ctrl+K with in-house fuzzy match, favorites +
+   recents via storage, theme system/light/dark, offline indicator), /tools
+   directory page, /my-data page.
+7. Core pages (item k): /report (masked-data summary + empty state + print),
+   /help (12+ grouped Q&A, mailto from SUPPORT_EMAIL, guide links→none yet),
+   /about (credits/licenses incl. bundled libs), /privacy + /terms (expanded;
+   add lawyer-review line to OWNER_TODO.md).
+8. Sitemap from registry+routes (gen-meta already data-driven — extend to tool
+   slugs once tools exist; Phase A: new static pages included automatically).
+9. Test tooling (item i): new unit tests for storage/random/validators/registry;
+   `scripts/zero-network.mjs`, `scripts/axe-scan.mjs`, `scripts/overflow-check.mjs`
+   (headless-Chrome scripts; docs say how to run; nothing test-related ships in
+   the client build). `npm audit` + report.
+10. Update PROGRESS.md (done/not-done/decisions/libraries+sizes/how-to-verify),
+    RUN.md (verified commands), OWNER_TODO.md (lawyer review, icon replacement,
+    wordlist license when it lands, help-link verification slots).
+
+Decisions: registry starts EMPTY (honest: every entry must work end-to-end);
+ToolPage/engines ship unreferenced-but-tested until Phase B wires first tools;
+no new runtime deps (all in-house); dev-only test scripts may document optional
+`playwright`/`axe-core` installs but client bundle gains zero bytes.
+
+---
+
+## STANDING RULES (copied from Phase A brief; every later phase must follow these)
+
+C1. CORRECTION to "NO ACCOUNTS and no server-side storage of user data": **the only
+server-side storage allowed is what the EXISTING email-subscription flow already
+needs** (e.g. a subscribers table and its email-sending service). Keep it exactly
+as it is. Do not add any other server-side storage.
+
+C2. CORRECTION: wherever the prompt says "Limits panel (see section 15)" or
+"(see section 15)" for the Limits panel, **it means section 14 (LIMITS REGISTER)**.
+
+SAFE DELETION RULE (mandatory): the subscription flow (subscribe API, confirmation
+email, confirm/unsubscribe pages/routes, its server routes, its database access and
+its email-sending service) and the Breach Guard route are PROTECTED. Before deleting
+any file, dependency or environment variable, search for every import and reference
+to it. If a protected area uses it, KEEP it. In particular, do NOT remove the
+Supabase package, Supabase client files, Supabase environment variables, the Resend
+package or its keys if the subscription flow or any server route uses them: delete
+only the account/auth/profile code inside or around them.
+
+---
+
+## PHASE A — CLEANUP (item j): deletion table
+
+Method: `git grep` run for every import/reference of each candidate. "Referenced by
+protected code?" covers: `server.js` (breach route + subscription routes), `lib/`,
+`send-newsletter.js`, root `src/` (SPA), `scripts/` build/dev tooling, `index.html`,
+`vite.config.js`, `schema.sql`, `.env.example`.
+
+| Path | Why account-only / Lovable-only | Referenced by protected code? | Action |
+|---|---|---|---|
+| `tirenify-src/` (whole directory, 89 files: `.lovable/project.json`, `src/routes/profile.tsx`, `src/routes/settings.tsx`, `src/routes/alerts.tsx`, `src/lib/lovable-error-reporting.ts`, `src/components/ui/avatar.tsx`, `src/lib/scan-store.ts`, Radix/shadcn `src/components/ui/*`, TanStack `src/router.tsx` + `src/routeTree.gen.ts`, `src/server.ts`, plus its own `package.json` / `vite.config.ts` / `vitest.config.ts` / `bun.lock`) | Exported Lovable prototype (`template: tanstack_start_ts_current`) holding the account-only code: profile page (name+email), settings, alerts, avatar, auth/telemetry. Root vite build never reads it; root `src/` never imports it; root `vitest.config.js` names it only to EXCLUDE it. | **no** (only PROGRESS.md + vitest.config.js mention it — neither is protected behavior) | DELETE whole directory |
+| `node-fetch` in root `package.json` | Zero `require`/`import` matches in `server.js`, `lib/`, `send-newsletter.js`, `scripts/`, `src/` — server uses Node 18+ global `fetch`. | no | DELETE dep only if clean `npm install` passes; else keep + note |
+| `@supabase/supabase-js`, `resend`, Supabase env vars, `schema.sql`, `server.js` Supabase/Resend blocks, `send-newsletter.js` | They power the PROTECTED subscription flow (subscribe/confirm/unsubscribe + confirmation/newsletter emails). | **yes — protected** | KEEP, untouched |
+| `src/components/email-flow.jsx`, `src/components/email-optin.jsx` | Client half of the PROTECTED subscription flow. | **yes — protected** | KEEP, untouched |
+| lovable-tagger / Lovable meta / "Edit with Lovable" / "coming soon" in the ACTIVE app | Searched active `src/`, root `index.html`, `vite.config.js`: zero matches. The only "coming soon" text lived inside `tirenify-src/` (deleted above). No placeholders ship. | n/a | Nothing to delete |
+
+Deletion log (2026-10-10, Phase A session):
+- `git rm -r tirenify-src/` staged (89 files) + working-tree copy removed. Build
+  (vite OK, gen-meta wrote 5 snapshots) and unit tests (33/33) still pass.
+- `node-fetch` kept for now — unused, but removing it would force a full
+  `npm install` re-verify; deferred to end of Phase A if time allows.
+- Subscription-flow verification (code path; see notes below): with keys absent,
+  `handleSubscribe` returns 503 with the friendly "not available" message
+  (server.js:350-355); confirm route behaves the same (server.js:511-515).
+  IMPORTANT LESSON: the local `.env` is untracked but REAL — `dotenv` loads it
+  into any `node server.js` started locally, so the first "unconfigured" probes
+  actually used the real keys, wrote 3 probe rows (`probe`, `probe2`, `probe3`
+  @example.com) and sent real confirmation emails. All probe rows were deleted
+  afterwards (verified 0 remain), but the owner should know those 3 confirmation
+  emails went out. Future probes must move `.env` aside first, or test only
+  validation paths (e.g. invalid email → 400) which never touch the DB.
+- Owner note: `tirenify-src/` deletion is staged only (no commit/push per rules).
+- `git status` shows modified `public/*` build snapshots from the re-build —
+  that output is committed by design (deploy uses it), so rebuild diffs are
+  expected; owner commits when ready.
+
+---
+
 ## PHASE STATUS
 - Phase 0 (recon): **DONE**
 - Phase 1 (breach results): **DONE** — repaired + verified live this session. Full detailed view (free API returns details; 214 breaches for test@example.com). Distinct error codes + dev-only diagnostics + no-email-logging verified. Catch-up changes (Safeyard rename, APP_URL 301, RUN.md, error boundary, noscript, missing-env messages, .env.example, manifest) applied.
