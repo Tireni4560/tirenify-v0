@@ -1,4 +1,4 @@
-import{j as e}from"./vendor-react-CiBELqhN.js";import{C as o,P as a,D as t,b as u,u as l,L as n}from"./index-2UTKeF03.js";import{P as h}from"./ui-AUjQEFYx.js";const y={"/privacy":{title:"Privacy",body:[`What leaves your device. ${a} makes exactly one kind of outside request: when you
+import{j as e}from"./vendor-react-CiBELqhN.js";import{C as o,P as a,D as t,b as u,u as l,L as n}from"./index-BsXWi87U.js";import{P as h}from"./ui-AUjQEFYx.js";const y={"/privacy":{title:"Privacy",body:[`What leaves your device. ${a} makes exactly one kind of outside request: when you
         run Breach Guard, your email is sent by POST to our own server, which asks ${t.name}
         to look it up. The email is sent to them to run the check. It is used only for that, never
         stored by us, and never written to logs or URLs.`,`Everything else stays on your device. The tools — password generator, strength checker,
