@@ -112,6 +112,29 @@ masked summaries only, dashboard habits key `safeyard:habits` lives in the route
 tokens in `src/styles.css` (@theme, dark `#060b18`, self-hosted Sora/Manrope,
 `surface`/`bg-brand` utilities, print stylesheet started); brand in
 `src/config/brand.js`; score in `src/lib/score.js` (breach 50/habits 30/checkup 20,
+## DEPLOY NOTES (Vercel — added 2026-10-10, no commit/push per rules)
+
+- `server.js` now exports the Express app (`module.exports = app`) and only calls
+  `app.listen` when run directly (`require.main === module`), so `npm start` /
+  `npm run dev` are unchanged locally while Vercel `@vercel/node` can use the
+  exported app. The 404 + error handlers were moved BEFORE `listen` so they
+  register on the exported app in all environments.
+- New `vercel.json` (repo root): `builds` maps `server.js` → `@vercel/node`;
+  `routes` send `/api/*` AND every other path to `server.js` (Express serves the
+  committed `public/` SPA + static + API from one function);
+  `functions["server.js"].includeFiles = "public/**"` so static assets ship with
+  the function. No breach/subscription/static logic changed.
+- Vercel project settings: Output Directory = empty; Build Command = `echo skip`
+  (or empty) so the committed `public/` output is used — do NOT run a full vite
+  rebuild on Vercel. Install Command = default. Env vars: `APP_URL`,
+  `VITE_APP_URL`, `FRONTEND_URL` + optional `SUPABASE_*`, `RESEND_API_KEY`,
+  `EXPOSED_ORKNOT_API_KEY` (same as RUN.md).
+- Verified locally (2026-10-10, server started then stopped, no stray process):
+  `require('./server.js')` → export is a working Express app; `node server.js`
+  → `GET /` 200 (SPA) and `POST /api/breach-check {not-an-email}` → 400
+  `invalid_email` (validation path only — no live upstream call, no DB write).
+
+
 tested); tests in `tests/*.test.js` (33, node env); protected areas per Standing
 rules above — no auth/profile code in the live app (it all lived in
 `tirenify-src/`, now deleted).

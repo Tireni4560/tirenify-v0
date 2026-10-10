@@ -633,11 +633,6 @@ app.get("/api/email/unsubscribe", async (req, res) => {
   res.redirect("/?unsubscribed=1");
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
-
 // 404 for anything unmatched (e.g. unknown API paths). HTML routes are caught
 // by the SPA fallback above, so this mainly serves JSON API misses.
 app.use((req, res) => {
@@ -653,3 +648,15 @@ app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   res.status(500).json({ ok: false, error: "server", message: "Something went wrong. Please try again." });
 });
+
+// Exported for serverless hosts (Vercel @vercel/node uses the exported app).
+// Only bind a port when run directly (npm start / npm run dev); under Vercel
+// this file is required, not executed, so listen must not run there.
+module.exports = app;
+
+if (require.main === module) {
+  // Start server
+  app.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
+  });
+}
