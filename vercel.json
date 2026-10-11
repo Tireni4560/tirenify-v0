@@ -25,7 +25,7 @@
   ],
   "rewrites": [
     {
-      "source": "/(?!api/)(.*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
