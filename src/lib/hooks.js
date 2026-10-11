@@ -37,22 +37,6 @@ export function useDebounce(value, delayMs = 200) {
   return debounced;
 }
 
-/** True when the browser reports an internet connection. */
-export function useOnlineStatus() {
-  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine !== false));
-  useEffect(() => {
-    const on = () => setOnline(true);
-    const off = () => setOnline(false);
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
-    return () => {
-      window.removeEventListener("online", on);
-      window.removeEventListener("offline", off);
-    };
-  }, []);
-  return online;
-}
-
 /**
  * Clipboard with textarea fallback. Returns {copy, copied, supported}.
  * `copied` flips true briefly for aria-live feedback; callers announce it.

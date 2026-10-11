@@ -28,7 +28,7 @@ production build. **Do not use `npx serve`.**
 | Local dev (front end + API) | `npm run dev` | http://localhost:5173 (single command, no global installs, no login) |
 | Production build | `npm run build` | `vite build` -> `public/`, then `node scripts/gen-meta.mjs` writes per-route HTML + sitemap.xml + robots.txt + manifest.webmanifest |
 | Serve the production build | `npm start` | http://localhost:3000 (Express serves `public/` + the API routes) |
-| Unit tests | `npm test` | Vitest (33 tests) |
+| Unit tests | `npm test` | Vitest (101 tests, 14 files) |
 
 ### Environment
 

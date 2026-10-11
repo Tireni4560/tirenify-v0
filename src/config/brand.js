@@ -1,5 +1,15 @@
 // Single source of truth for product / module / company names.
 // Nothing else in the app may hard-code these strings.
+//
+// BRAND HIERARCHY (mandatory):
+//   - COMPANY = "Tirenify" .................. the company (parent brand)
+//   - PRODUCT_NAME = "Safeyard" ............. the product (first in the portfolio)
+//   - PRODUCT_ATTRIBUTION = "Safeyard by Tirenify" .. full product name, trust/
+//     ownership lines ONLY (footer tagline, about page, og:site_name, manifest)
+// RULE: never append "by Tirenify" (or by ${COMPANY}) to a string that already
+// contains PRODUCT_ATTRIBUTION — that is what produced the old doubled brand
+// line. UI chrome (headers, eyebrows, error text) uses PRODUCT_NAME
+// ("Safeyard") alone; full lines use PRODUCT_ATTRIBUTION exactly once.
 // Spec: PRODUCT_NAME = Safeyard (one word: capital S, lowercase "yard").
 // Page titles use "<Page> | Safeyard by Tirenify". Company = Tirenify.
 // Tagline = "Know Before They Do". Breach module = "Breach Guard".
@@ -9,6 +19,10 @@
 
 export const PRODUCT_NAME = "Safeyard";
 export const PRODUCT_FULL = "Safeyard by Tirenify";
+/** Full product name with company attribution — use for trust/ownership lines,
+ * exactly once per phrase. Alias of PRODUCT_FULL (kept both names so existing
+ * imports keep working). */
+export const PRODUCT_ATTRIBUTION = PRODUCT_FULL;
 export const COMPANY = "Tirenify";
 export const TAGLINE = "Know Before They Do";
 
@@ -16,9 +30,12 @@ export const TAGLINE = "Know Before They Do";
 export const MODULES = {
   dashboard: "Dashboard",
   breachGuard: "Breach Guard",
-  report: "Security Report",
+  report: "Report",
+  securityReport: "Security Report",
   tools: "Tools",
   learn: "Learn",
+  securityCenter: "Security Center",
+  account: "Account",
   checkup: "Checkup",
   privacyCheck: "Privacy Check",
   recover: "Recover",

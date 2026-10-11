@@ -3,14 +3,14 @@ import { TOOLS, getTool, toolsByCategory, validateRegistry, searchTools, TOOL_CA
 import { CATEGORIES } from "../src/config/brand.js";
 
 const sample = [
-  { slug: "alpha-tool", name: "Alpha Tool", purpose: "Does alpha things.", category: "passwords", keywords: ["secret", "login"], icon: "KeyRound", priority: 2, offline: true, related: ["beta-tool"], limits: "Local signals only." },
-  { slug: "beta-tool", name: "Beta Tool", purpose: "Does beta things.", category: "passwords", keywords: [], icon: "Shield", priority: 1, offline: true, related: [], limits: "Local signals only." },
+  { slug: "alpha-tool", name: "Alpha Tool", purpose: "Does alpha things.", category: "passwords", keywords: ["secret", "login"], icon: "KeyRound", priority: 2, related: ["beta-tool"], limits: "Local signals only." },
+  { slug: "beta-tool", name: "Beta Tool", purpose: "Does beta things.", category: "passwords", keywords: [], icon: "Shield", priority: 1, related: [], limits: "Local signals only." },
 ];
 
 describe("tool registry", () => {
   it("ships the first working tools and validates them", () => {
     expect(validateRegistry()).toEqual([]);
-    expect(TOOLS).toHaveLength(10);
+    expect(TOOLS).toHaveLength(11);
     const passwordTools = [
       "password-generator",
       "password-strength",
@@ -26,7 +26,6 @@ describe("tool registry", () => {
     for (const slug of passwordTools) {
       const tool = getTool(slug);
       expect(tool).not.toBeNull();
-      expect(tool.offline).toBe(true);
       expect(tool.category).toBe("passwords");
     }
   });

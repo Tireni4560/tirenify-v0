@@ -51,16 +51,17 @@ function escapeHtml(s) {
 async function main() {
   const baseHtml = await readFile(path.join(publicDir, "index.html"), "utf8");
 
-  // Per-route HTML snapshots for live routes other than root.
+  // Per-route HTML snapshots for live routes other than root. Pattern routes
+  // ("/tools/:slug") are skipped — every concrete slug is its own live entry.
   for (const route of LIVE_ROUTES) {
-    if (route.path === "/") continue;
+    if (route.path === "/" || route.path.includes(":")) continue;
     const dir = path.join(publicDir, route.path.replace(/^\//, ""));
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, "index.html"), swapMeta(baseHtml, route));
   }
 
-  // sitemap.xml (live routes only; planned routes are intentionally excluded).
-  const urls = LIVE_ROUTES.map((r) => {
+  // sitemap.xml (live routes only; planned routes and :param patterns excluded).
+  const urls = LIVE_ROUTES.filter((r) => !r.path.includes(":")).map((r) => {
     const loc = r.path === "/" ? `${SITE_URL}/` : `${SITE_URL}${r.path}`;
     return `  <url>\n    <loc>${loc}</loc>\n    <changefreq>monthly</changefreq>\n  </url>`;
   }).join("\n");
@@ -88,7 +89,7 @@ async function main() {
   await writeFile(path.join(publicDir, "manifest.webmanifest"), JSON.stringify(manifest, null, 2));
 
   console.log(
-    `gen-meta: wrote ${LIVE_ROUTES.length - 1} route snapshots + sitemap.xml + robots.txt + manifest.webmanifest`,
+    `gen-meta: wrote ${LIVE_ROUTES.filter((r) => r.path !== "/" && !r.path.includes(":")).length} route snapshots + sitemap.xml + robots.txt + manifest.webmanifest`,
   );
 }
 

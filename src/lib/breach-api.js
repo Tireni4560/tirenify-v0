@@ -32,7 +32,7 @@ const FRIENDLY = {
   },
   offline: {
     title: "You're offline",
-    message: "The breach check needs a connection — your on-device tools still work offline.",
+    message: "The breach check needs an internet connection. Please try again when you're connected.",
   },
   bad_response: {
     title: "Something went wrong",

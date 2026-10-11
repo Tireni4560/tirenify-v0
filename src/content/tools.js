@@ -12,7 +12,6 @@
 //   keywords   search terms (synonyms, local words)
 //   icon       lucide icon NAME (string; resolved by the UI, never a component)
 //   priority   dashboard "quick tools" order (lower first)
-//   offline    always true — every tool must work offline
 //   related    slugs of related tools/guides (must all exist)
 //   limits     short Limits-panel text (from the section-14 register)
 import { CATEGORIES } from "../config/brand.js";
@@ -28,7 +27,6 @@ export const TOOLS = [
     keywords: ["password", "generator", "random", "security", "create password", "passphrase"],
     icon: "KeyRound",
     priority: 1,
-    offline: true,
     related: ["password-strength", "entropy-calculator", "passphrase-generator"],
     limits: "Only uses your browser's secure random number generator. We never see or store the passwords you type or generate.",
   },
@@ -40,7 +38,6 @@ export const TOOLS = [
     keywords: ["strength", "check", "guess", "entropy", "password check", "how strong"],
     icon: "ShieldCheck",
     priority: 2,
-    offline: true,
     related: ["password-generator", "entropy-calculator", "password-reuse-checker"],
     limits: "This is an estimate, not a guarantee. It flags repeated strings, common patterns and missing character classes so you can improve the password yourself.",
   },
@@ -52,7 +49,6 @@ export const TOOLS = [
     keywords: ["username", "nickname", "handle", "alias", "online identity", "account name"],
     icon: "UserRound",
     priority: 3,
-    offline: true,
     related: ["email-alias-generator"],
     limits: "Usernames are a suggestion only. Some sites reserve names quickly, and changing them later can be hard.",
   },
@@ -64,7 +60,6 @@ export const TOOLS = [
     keywords: ["email", "alias", "plus addressing", "mask", "privacy", "track", "disposable"],
     icon: "MailCheck",
     priority: 4,
-    offline: true,
     related: ["username-generator", "password-strength"],
     limits: "Aliases only change how your address is written. They do not stop a site from seeing that you used it, and they never create a real mailbox.",
   },
@@ -76,7 +71,6 @@ export const TOOLS = [
     keywords: ["security question", "answer", "memorable", "identity", "recovery"],
     icon: "Shield",
     priority: 5,
-    offline: true,
     related: ["password-strength", "password-generator"],
     limits: "Pick answers you can remember but would never tell anyone. Store them in a password manager, not in your browser's saved passwords.",
   },
@@ -88,7 +82,6 @@ export const TOOLS = [
     keywords: ["pin", "password", "number", "4 digit", "random", "lock screen"],
     icon: "Key",
     priority: 6,
-    offline: true,
     related: ["password-strength", "password-generator"],
     limits: "PINs are only as good as their randomness. This uses your browser's secure random generator and avoids common bad patterns.",
   },
@@ -100,7 +93,6 @@ export const TOOLS = [
     keywords: ["passphrase", "diceware", "master password", "memorable", "long password"],
     icon: "Clapperboard",
     priority: 7,
-    offline: true,
     related: ["password-generator", "password-strength"],
     limits: "Longer is stronger. Pick a separator you can type on the devices you use, and store the result in a password manager.",
   },
@@ -112,19 +104,17 @@ export const TOOLS = [
     keywords: ["entropy", "bits", "guess", "strength", "estimate"],
     icon: "BarChart3",
     priority: 8,
-    offline: true,
     related: ["password-strength", "password-generator"],
     limits: "A back-of-the-envelope estimate, not a score. Real hashes and attack speeds vary widely, so treat the numbers as rough.",
   },
   {
     slug: "password-reuse-checker",
     name: "Password Reuse Checker",
-    purpose: "Paste a few passwords here and see which ones repeat — all on your device, nothing leaves the browser.",
+    purpose: "Paste a few passwords here and see which ones repeat — compared in your browser, never stored or sent.",
     category: "passwords",
     keywords: ["reuse", "repeat", "checker", "paste", "better password"],
     icon: "ListChecks",
     priority: 9,
-    offline: true,
     related: ["password-strength", "password-generator", "leak-safety-guide"],
     limits: "Comparing only on this device, so it can only flag identical lines you paste. It does not check against any database.",
   },
@@ -136,9 +126,19 @@ export const TOOLS = [
     keywords: ["breach", "leak", "hacked", "what now", "recovery", "steps"],
     icon: "FileText",
     priority: 10,
-    offline: true,
     related: ["password-strength", "password-reuse-checker", "security-answer-generator"],
     limits: "A guide, not a diagnosis. Follow the steps in order, and change passwords only on sites you can reach safely.",
+  },
+  {
+    slug: "qr-code-generator",
+    name: "QR Code Generator",
+    purpose: "Turn any text or URL into a QR code you can download as PNG or SVG — encoded in your browser.",
+    category: "everyday",
+    keywords: ["qr", "code", "barcode", "url", "link", "scan", "png", "svg", "generate"],
+    icon: "QrCode",
+    priority: 11,
+    related: [],
+    limits: "A QR code is only an encoded copy of what you enter — scanners show exactly that text, no more. Test-scan before printing, and never put passwords or one-time codes into a code you'll share.",
   },
 ];
 
@@ -165,7 +165,6 @@ export function validateRegistry(tools = TOOLS) {
     if (!t.name) errors.push(`Missing name: ${t.slug}`);
     if (!t.purpose) errors.push(`Missing purpose: ${t.slug}`);
     if (!TOOL_CATEGORIES.includes(t.category)) errors.push(`Unknown category for ${t.slug}: ${t.category}`);
-    if (t.offline !== true) errors.push(`Tool must be offline: ${t.slug}`);
     if (!t.limits) errors.push(`Missing limits text: ${t.slug}`);
     for (const r of t.related || []) {
       if (!slugs.has(r) && !String(r).startsWith("/")) errors.push(`Unknown related "${r}" on ${t.slug}`);

@@ -1,10 +1,197 @@
 # PROGRESS.md — Safeyard by Tirenify
 
+## THIS SESSION — shell UI fixes (DONE)
+
+- Fixed mobile hamburger state/drawer wiring, desktop top spacing/sidebar alignment, and removed sidebar nav checkmarks.
+
 > Resume file for any agent. Update this file **after every phase** with: done / not done / decisions / how to run and verify / deploy notes.
 > PRODUCT_NAME = **Safeyard** (one word: capital S, lowercase "yard"). Page titles use "<Page> | Safeyard by Tirenify". Company = Tirenify. Tagline = "Know Before They Do". Breach module = "Breach Guard".
 > HARD RULES: no git commit/push (user does that); ZERO network at runtime except `POST /api/breach-check` and the email-subscription flow; no accounts; no secrets in client code; all new files lowercase-hyphenated.
 
 ---
+
+## THIS SESSION — brand naming fix (DONE)
+
+### Root cause
+`PRODUCT_FULL` ("Safeyard by Tirenify") was composed a second time with `by ${COMPANY}` in two places, producing "Safeyard by Tirenify by Tirenify":
+1. `src/routes/static-page.jsx` — `{PRODUCT_FULL} by {COMPANY}.` on every static page (/help, /privacy, /terms, /about) + `PageHeader eyebrow={PRODUCT_FULL}`.
+2. `src/lib/static-content.js` — about page first line `${PRODUCT_FULL} by ${COMPANY}.` and terms line `${PRODUCT_FULL} is provided by ${COMPANY}` (the rest used PRODUCT_FULL alone, correctly).
+Same class of bug; the fix is in the source (brand.js rule), not one-off strings.
+
+### Constants chosen (brand.js, documented in-file)
+- `COMPANY = "Tirenify"` — company only.
+- `PRODUCT_NAME = "Safeyard"` — UI chrome: wordmark, dashboard/report H1, eyebrows, error text, privacy/terms sentences where the sentence already says "provided by Tirenify".
+- `PRODUCT_ATTRIBUTION = "Safeyard by Tirenify"` (alias of PRODUCT_FULL) — trust/ownership lines, exactly once per phrase: about title/first line, manifest `name`, `og:site_name`, `<Page> | …` page titles.
+- RULE (in brand.js + PROGRESS here): never append "by Tirenify" to a string that already contains the attribution.
+- `pageTitle` unchanged and verified: `"<Page> | Safeyard by Tirenify"`, root `"Safeyard by Tirenify — Know Before They Do"` (tagline untouched, no company in it). 404 titles (`Page not found | Safeyard by Tirenify`) checked single-attribution.
+- Email/subscription subjects ("Welcome to Tirenify") are company contexts — intentionally left alone; server code untouched.
+
+### Files changed
+`src/config/brand.js` (hierarchy comment + `PRODUCT_ATTRIBUTION` alias), `src/routes/static-page.jsx` (eyebrow + contact line → PRODUCT_NAME), `src/lib/static-content.js` (about/terms reworded, attribution used exactly once), `tests/brand.test.js` (new: hierarchy constants, pageTitle single-attribution, zero-doubling sweep of static copy + route table), `public/*` (rebuilt — 28 snapshots + manifest), `PROGRESS.md`, `RUN.md`.
+
+### Search confirmation
+- `src/ + scripts`: zero matches for the doubled pattern (the last hit was the warning comment itself — reworded so the pattern no longer appears anywhere).
+- Rebuilt `public/` HTML + manifest: zero matches; spot-checks: `<title>About | Safeyard by Tirenify</title>`, `og:site_name = "Safeyard by Tirenify"`, manifest `name = "Safeyard by Tirenify"`.
+- `npm run build` ✓ · `npm test` ✓ 101/101 (14 files). No servers started; no commits/pushes.
+
+---
+
+
+## THIS SESSION — expanded sidebar nav + slim dashboard (DONE)
+
+### 1) Navigation (single source: `src/config/nav.js`)
+- New shared modules:
+  - `src/content/tool-groups.js` — dashboard taxonomy moved out of the dashboard: Generators (7 tools), Password Security (3), Breach Checks (Breach Guard module + leak-safety-guide). `resolveGroup()` maps slugs to live destinations; groups with zero live items are dropped.
+  - `src/config/nav.js` — ONE data structure for desktop sidebar, mobile bar and mobile More sheet. Every leaf resolves only when its destination is live (tool-group sections drop when empty); a test asserts no nav leaf can 404.
+- Final desktop sidebar order (sectioned): **Overview** → Dashboard, Security Report (/report), Account → **Checks** → Breach Guard → **Tools** → Tools — all, Generators (`/tools?section=generators`), Password Security (`/tools?section=password-security`), Breach Checks (`/tools?section=breach-checks`), QR Code Generator → **Learn** → Security Center (/learn). (Task-ordered core entries: Dashboard | Breach Guard | Tools | Learn(→"Security Center") | Report(→"Security Report") all present; labels use the longer forms since the sidebar has room.) No categories omitted — none are empty.
+- Mobile: bottom bar with the first 4 sidebar destinations (Dashboard, Security Report, Breach Guard, Tools — all) + **More** sheet (toggle button, closes on navigation) for the rest. Active state highlights both the bar and the More button when a rest-item route is active.
+- Active-state rule (`isNavActive`): exact for `/`, prefix match for nested pages (`/tools/...`, `/learn/...`); section links (`/tools?section=x`) are active only when the same section query is open and never claim tool pages.
+- `/tools?section=<id>` filtering implemented in `tools.jsx` (filtered header + cards + "← All tools"); `#category` anchors kept. Unknown `?section=` falls back to the full directory.
+- Homepage footer link + Help/Privacy/Terms/About untouched; wordmark unchanged; no new icons.
+
+### 2) Dashboard slimmed (home is now exactly the spec)
+- `/` contains ONLY: header (Safeyard by Tirenify + tagline), intro+CTAs (Run Breach Guard / Browse all tools + privacy note), security score w/ 50/30/20 breakdown and Partial state, breaches-found summary + empty state, 4-item safety habits checklist (device storage), recent activity (masked), your-data-on-this-device + clear button.
+- REMOVED from dashboard: Generators / Password security / Breach Checks card grids, Security Center guide cards, Recent tools panel, Account profile preview, dedicated Security Report section, PROTECT/AFTER_BREACH links, and the dashboard-local DASH_GROUPS/BREACH_CARD/CENTER guides/recents/profile constants. Those live in the sidebar and their own routes (`/tools?section=`, `/learn`, `/account`, `/report`) — dashboard no longer duplicates them. Score math, habits storage, breach masking, copy, and styling preserved.
+
+### Verified
+- `npm run build` ✓ 28 snapshots; `npm test` ✓ **98/98** (13 files, +7 `tests/nav.test.js`: required entries present, every leaf live, mobile union == sidebar set, prefix active states, empty-group drop, every live tool exactly once across groups).
+- Click-test: `/`, `/breach-guard`, `/tools`, `/tools?section=generators`, `/tools?section=breach-checks`, `/report`, `/account`, `/tools/qr-code-generator`, `/learn` — all expected live; `git diff server.js lib/`-area server code untouched (config content modules only). Stray dev server from an earlier pass found and killed; ports free.
+- No commits, no pushes.
+
+### Files changed this session
+`src/config/nav.js` (new), `src/content/tool-groups.js` (new), `tests/nav.test.js` (new), `src/components/AppShell.jsx` (sectioned sidebar + More sheet), `src/routes/tools.jsx` (`?section=` filter), `src/routes/index.jsx` (slim dashboard), `src/config/brand.js` (full-length nav labels), `public/*` (rebuilt), `PROGRESS.md`, `RUN.md`.
+
+---
+
+
+## THIS SESSION — drop offline messaging, QR generator, /report, /account, dashboard reorg (DONE)
+
+### 1) Offline messaging removed
+- Deleted: `useOnlineStatus` hook (had zero callers), both ToolPage offline badges, tools-directory "Offline" badges, "works offline"/"on your device because offline" copy in hero/PageHeader/Learn/learn/:slug route descriptions/help/about/password-strength/reuse-password descriptions and password-tools copy.
+- Registry: `offline: true` field removed from all 11 entries, doc comment and validator dropped; `registry.test.js` updated (no `tool.offline` assertions).
+- Copy now frames privacy and honesty instead: ToolPage shows one badge — "Nothing you type is uploaded"; limits/tips unchanged (signals-not-verdicts).
+- KEPT (not marketing): the breach-check `FRIENDLY.offline` error kind (functional network error on the allowed Breach Guard route) and privacy wording like "nothing is uploaded"/"stored on this device".
+
+### 2) QR Code Generator (live, zero new deps)
+- `src/lib/qr-code.js` (new) — **in-house QR encoder, no new runtime dependency**: byte mode, EC level M, versions 1–20 (max 666 bytes). Covers GF(256)+Reed–Solomon, all 8 masks with standard penalty scoring. The bundled `qrcode@1.5.4` npm package was used only in a temp dev check (installed OUTSIDE the repo, deleted after) and confirmed **9/9 byte-identical matrices** (same version, mask, all modules) across v1–v20; golden matrix pinned in `tests/qr-code.test.js` (7 tests).
+- `src/components/qr-tool.jsx` (new) — ToolPage layout with purpose/how-it-works/limits/tips, canvas preview, **PNG + SVG download**, input counter vs `QR_MAX_BYTES`. Registered as `qr-code-generator` (category `everyday`, priority 11) with live `/tools/qr-code-generator` route; `/tools/:slug` map merged in `tool.jsx`; surfaced in the /tools directory, registry search, dashboard Generators section and sitemap.
+- If a camera/scanner is ever wanted later, it is still unbuilt (no placeholder).
+
+### 3) Security Report — first class
+- `/report` is **live**: `src/routes/report.jsx` (new) built only from local data (masked breach summaries, habits, leak-checklist ticks + the same partial-aware score formula as the dashboard). Empty state with CTAs (Breach Guard / tools / dashboard) — never invents scores. Print button (`window.print()`, `.no-print` aware).
+- Nav is now **Dashboard | Breach Guard | Tools | Learn | Report** (Report item derived from `LIVE_ROUTES`, same pattern as the rest; shows on desktop sidebar and the mobile bar).
+- Dashboard has a dedicated "Security Report" section (heading + description + primary button → /report).
+
+### 4) Account (local only)
+- `src/routes/account.jsx` (new, live `/account`) — exact UX from the task: Account / Profile, avatar letter from name, name + email fields with `you@example.com` placeholder, "Save changes" → writes to device storage under the allow-listed `profile` prefs key, `aria-live` success confirmation ("Saved on this device."), "Saved on this device. Full accounts are coming soon." wording kept. No auth, no Supabase users, no server APIs, subscription flow untouched ("Clear data" wipes profile too, since it uses `storage.clearAll`).
+- Dashboard "Account" section shows the saved profile preview + "Manage profile" → /account. Not added to nav (spec targets 5 nav items).
+
+### 5) Dashboard taxonomy (evaluated, implemented)
+- Inventory: 11 live tools (7 generator-shaped, 3 checker-shaped, 1 guide) + Breach Guard module + 8 learn guides + /report.
+- Chosen groups (task's suggested taxonomy + Breach checks as the obvious home for the module):
+  - **Generators** (7) → `/tools`: password, passphrase, PIN, username, email alias, security answer, **QR**
+  - **Password security** (3) → `/tools#passwords`: strength, reuse, entropy
+  - **Breach checks** (2) → cards link directly: Breach Guard + leak-safety-guide
+  - Every live tool appears **exactly once**; zero-live-tool categories skipped — no empty shells. `/tools` keeps registry categories (`#passwords` anchor added).
+- Replaced "Quick tools"/"Protect your accounts"/"After a breach" (their cards duplicated tools now in the groups). Kept: hero, score/breaches/habits/activity/data snapshot, Security Center cards, recent tools.
+- Dashboard order: hero → Security Report → Account → snapshot grid → tool groups → Security Center → Recent tools.
+
+### 6) Footer
+- AppShell footer (the only footer) now has **Homepage → https://tirenify.app/** (`target="_blank" rel="noopener noreferrer"`, matching the existing external-link pattern). Help, Privacy, Terms, About kept.
+
+### Verified
+- `npm run build` ✓ — **28 snapshots** (+`/report`, `/account`, `/tools/qr-code-generator`); sitemap updated.
+- `npm test` ✓ — **91/91** (12 files; +7 QR incl. reference-pinned golden matrix).
+- Dev smoke: `/`, `/tools/qr-code-generator`, `/report`, `/account`, `/learn/setup-2fa` → all 200; temp `_qrcheck` deleted; **ports 5173/3000 confirmed free**.
+- `git diff server.js lib/` → empty (breach + subscription server code untouched).
+
+### Files changed this session
+`src/lib/qr-code.js` (new), `src/components/qr-tool.jsx` (new), `src/routes/report.jsx` (new), `src/routes/account.jsx` (new), `src/content/habits.js` (new, shared dashboard/report), plus edits: `tools.js`, `hooks.js`, `static-content.js`, `breach-api.js` (error copy only), `storage.js` (allow-list `profile`), `tool-page.jsx`, `tools.jsx`, `tool.jsx`, `learn.jsx`, `index.jsx`, `routes.js` (+qr, /report, /account live), `brand.js` (`report: "Report"`), `App.jsx`, `AppShell.jsx`, `registry.test.js`, `password-tools.test.js`, `qr-code.test.js` (new), `public/*` (rebuilt), `PROGRESS.md`, `RUN.md`.
+
+### Decisions / notes
+- Profile email is stored raw by explicit design of this task (name+email entered deliberately for a local profile) — the no-raw-email rule still applies to tools/breach flows.
+- "Offline attack" wording was rephrased to avoid the word while keeping the cryptographic meaning; scan-tool mention removed from Help copy since no scanner exists.
+
+---
+
+
+
+## THIS SESSION — Learn / Security Center + richer dashboard (DONE)
+
+### Part A — Learn / Security Center
+- **`src/content/learn.js` (new)** — 8 fully-written guides (5 required + 3 optional, all shipped): `what-is-a-data-breach`, `unique-passwords`, `setup-2fa`, `spotting-phishing`, `in-a-breach`, `sim-swap`, `mobile-money-safety`, `whatsapp-takeover`. Shape: slug/title/category/summary/sections[{heading,body}]/related/tools. Helpers: `getGuide`, `listGuides`, `guidesByCategory`, `validateGuides`, `LEARN_CATEGORIES` (Start here / Protect your accounts / If something goes wrong). African-first examples throughout (parcel-fee lures, OTP fraud, SIM swap, M-Pesa-style warnings, WhatsApp takeover). Plain string bodies — never HTML, never `dangerouslySetInnerHTML`. Works offline (baked into the bundle).
+- **`src/routes/learn.jsx` (new)** — hub: PageHeader "Security Center" + subtitle "Clear, practical guidance — no jargon.", guides grouped by category as cards.
+- **`src/routes/guide.jsx` (new)** — `/learn/:slug` article route: 404 for unknown slugs, per-article `<head>`, sections as plain elements, related guides + related LIVE tools (guard: `LIVE_ROUTES` check), "All guides" + Breach Guard CTAs.
+- **`src/config/routes.js`** — `/learn` (retitled "Security Center") + new `/learn/:slug` pattern → live; the 8 shipped articles → live. Still planned: `/learn/scams`, `/learn/scam-quiz`, `safe-public-wifi`, `safe-online-shopping`, `loan-app-privacy`, `breach-data-types` (no content written — not linked anywhere).
+- **`src/App.jsx`** — lazy `LearnHub`/`GuideRoute` branches; App-level head skipped for `/learn/:slug` (GuideRoute owns it).
+- **`src/components/AppShell.jsx`** — Learn nav item added (derived from LIVE_ROUTES, same pattern as Tools). Sidebar + bottom bar now: Dashboard / Breach Guard / Tools / Learn.
+
+### Part B — dashboard sections added (src/routes/index.jsx)
+All destinations live-route-guarded (`LIVE_ROUTES` set) — no card can link to a 404:
+1. **Hero** — "Know before they do" + Run Breach Guard (primary) + Browse all tools + on-device/no-account line.
+2. **Existing pieces kept** — score ring + breakdown, breaches-found card, safety habits, recent activity, "Your data on this device" panel (untouched).
+3. **Quick tools** — top 6 live tools by registry priority → `/tools/<slug>` + "All tools →".
+4. **Security Center** — the 5 core guide cards + intro line + "See all guides → /learn".
+5. **Protect your accounts** — 4 checklist cards: make a strong password / check strength / turn on 2FA (/learn/setup-2fa) / stop reusing (password-reuse-checker).
+6. **If a check finds your email** — Breach Guard, /learn/in-a-breach, /tools/leak-safety-guide.
+7. **Recent tools (local progress)** — reads storage prefs `recents` (allow-listed key, slugs only, capped 6); empty state with one CTA ("Browse all tools"), not a dead panel. Written by `tool.jsx` (`rememberVisit`) on every tool open.
+- Footer row skipped on purpose — the shell footer already has Help / Privacy / Terms / About.
+
+### Verification
+- `npm run build` ✓ — **25 route snapshots** (was 16): adds `/learn` + 8 article `index.html` files with correct titles; sitemap lists all 9 learn URLs.
+- `npm test` ✓ — **84/84** (11 files; +7 in new `tests/learn.test.js`: content validation, slug/category lookups, **honesty guards** — every guide has a live route, every live `/learn/*` route has written content, related tools exist in the registry).
+- Dev smoke: `/learn`, `/learn/setup-2fa`, `/learn/in-a-breach`, `/`, `/tools` → all 200; **server stopped, ports 5173/3000 confirmed free**.
+- `git diff server.js lib/` → empty: breach-check + subscription code untouched.
+
+### Files changed this session
+`src/content/learn.js` (new), `src/routes/learn.jsx` (new), `src/routes/guide.jsx` (new), `src/routes/index.jsx` (dashboard), `src/routes/tool.jsx` (recents), `src/config/routes.js`, `src/App.jsx`, `src/components/AppShell.jsx`, `tests/learn.test.js` (new), `public/*` (rebuilt), `PROGRESS.md`, `RUN.md`.
+
+### Not done / decisions
+- Optional Learn articles `scams`, `scam-quiz`, `safe-public-wifi`, `safe-online-shopping`, `loan-app-privacy`, `breach-data-types` remain `planned` — content not written, honesty rule keeps them unlinked (quiz/scam library needs engine work; separate pass).
+- No favorites UI (storage key exists but no toggle affordance designed yet) — recents only.
+
+---
+
+
+## THIS SESSION — tool visibility + Password & Account batch (DONE)
+
+### Root cause: registered tools were invisible
+- `src/content/tools.js` listed 10 complete tools and their routes had been flipped to `status:"live"`, but nothing could render or link them:
+  1. **`src/App.jsx` had no `/tools` or `/tools/:slug` branches** — the router fell through to `<NotFound/>` even for live routes.
+  2. **`AppShell` NAV was hard-coded** to Dashboard + Breach Guard — no Tools link in sidebar/bottom bar.
+  3. **No route components existed** — `src/routes/tools.jsx` and `src/routes/tool.jsx` were missing.
+  4. Historically every `/tools*` route was `status:"planned"`; planned routes are deliberately unlinked 404s, which is exactly what the deployed static app showed.
+- **Deploy factor:** Vercel serves the committed `public/` snapshot — changing `src/` alone never shows anything. Fixed by running `npm run build`, which regenerated `public/` (16 per-route snapshots, sitemap, robots, manifest).
+- Also fixed during the earlier (interrupted) chunked writes: `src/lib/password-tools.js` had a **syntax error** — `PASSPHRASE_WORDS` was corrupted into an open array plus orphaned string fragments; repaired by a one-shot Node splice (236 words) before continuing.
+
+### Shipped: 10 live, working, offline tools
+`password-generator`, `password-strength`, `username-generator`, `email-alias-generator`, `security-answer-generator`, `pin-generator`, `passphrase-generator`, `entropy-calculator`, `password-reuse-checker`, `leak-safety-guide` — all via one shared `ToolPage` layout (purpose, how-it-works, limits panel from the registry, tips, related tools, next steps, copy actions, `aria-live` result region).
+
+### Files changed this session
+- `src/lib/password-tools.js` (new) — pure helpers: password/PIN/passphrase/username/security-answer generators, alias builders, entropy + crack-time estimates, pattern classifier, reuse checker. Web Crypto + in-house rejection sampling only. **Fixes:** corrupted word list (build-breaking), regex metacharacter escaping in the pattern scan (`.` no longer false-positives as "repeated"), `checkPasswordReuse` reworked to return 1-based **line-number groups** (never echoes pasted values), added `generateSecurityAnswers`.
+- `src/components/password-tools.jsx` (new, ~960 lines) — 10 tool page components + `TOOL_PAGES` slug→component map. No raw secret is ever stored; results live in component state.
+- `src/routes/tools.jsx` (new) — directory page, grouped by category from the registry (no hard-coded tool list).
+- `src/routes/tool.jsx` (new) — `/tools/:slug` resolver: unknown slug or missing component renders the 404 view; sets per-tool `<title>`/meta.
+- `src/App.jsx` — lazy `ToolsIndex`/`ToolRoute` branches; skips the generic head for the `:slug` pattern so the tool sets its own.
+- `src/components/AppShell.jsx` — NAV now derived from `LIVE_ROUTES` (Dashboard / Breach Guard / Tools) — nav can never dead-link.
+- `src/config/routes.js` — `/tools`, `/tools/:slug` and the 10 slug routes are `live`; **`/report` and `/my-data` reverted to `planned`** (pages don't exist yet and honesty rules forbid linking unfinished routes).
+- `scripts/gen-meta.mjs` — skips `:param` paths for snapshots/sitemap/log (a `:slug` directory is unwritable on Windows anyway; each concrete slug is its own live entry).
+- `tests/password-tools.test.js` (new) — 15 tests: generator contracts, alias strings, entropy math, regex-escape regression, reuse line groups (asserts values never leak into output), and a **registry↔TOOL_PAGES completeness guard**.
+- `public/*` — rebuilt (route snapshots for `/tools` + all 10 slugs with correct titles, sitemap includes them).
+
+### Verified
+- `npm run build` ✓ (16 route snapshots) · `npm test` ✓ **77/77** (was 62).
+- Dev smoke test: `GET /tools` 200, `GET /tools/password-strength` 200, unknown slug → SPA shell + client-side 404 view, `OPTIONS /api/breach-check` 204. **Servers stopped afterwards; ports 5173/3000 confirmed free.**
+- `git diff server.js lib/` → empty: breach-check and subscription code paths untouched.
+- Manual check list: http://localhost:5173/tools · any three tool pages · nav shows Tools · DevTools network shows zero requests on tool pages (Breach Guard is the only client network call).
+
+### Decisions / not done
+- `/report`, `/my-data` left `planned` (were briefly flipped live by an earlier session with no pages built).
+- Reuse checker displays **line numbers only** — pasted passwords are never rendered, logged or stored.
+- Full 80-tool wishlist NOT attempted this pass — registry honesty: only the 10 working tools are listed.
+
+---
+
 
 ## THIS SESSION — breach-check repair + catch-up changes (DONE)
 
@@ -198,6 +385,20 @@ Build order (each step: write code, keep build+tests green):
    /about (credits/licenses incl. bundled libs), /privacy + /terms (expanded;
    add lawyer-review line to OWNER_TODO.md).
 8. Sitemap from registry+routes (gen-meta already data-driven — extend to tool
+
+
+- Header hamburger nav fixed (desktop sidebar restored at lg+; mobile drawer with slide animation; hamburger has lg:hidden; drawer renders outside header with z-30 overlay).
+- Score ring overlap fixed (SVG z-0 behind text z-10; number text-3xl; level stacked pt-1). No other score changes.
+
+
+- Header hamburger nav fixed (desktop sidebar restored at lg+; mobile drawer with slide animation; hamburger has lg:hidden; drawer renders outside header with z-30 overlay).
+- Score ring overlap fixed (SVG z-0 behind text z-10; number text-3xl; level stacked pt-1). No other score changes.
+
+
+
+- brand-hierarchy: About copy, sidebar footer motto, and public snapshots re-verified & rebuilt (`npm run build` → 28 snapshots). Source already matched the brand rules (no doubles), so no source edits were needed. Servers stopped; no commit/push.
+
+
    slugs once tools exist; Phase A: new static pages included automatically).
 9. Test tooling (item i): new unit tests for storage/random/validators/registry;
    `scripts/zero-network.mjs`, `scripts/axe-scan.mjs`, `scripts/overflow-check.mjs`
@@ -276,7 +477,8 @@ Deletion log (2026-10-10, Phase A session):
 - Phase 0 (recon): **DONE**
 - Phase 1 (breach results): **DONE** — repaired + verified live this session. Full detailed view (free API returns details; 214 breaches for test@example.com). Distinct error codes + dev-only diagnostics + no-email-logging verified. Catch-up changes (Safeyard rename, APP_URL 301, RUN.md, error boundary, noscript, missing-env messages, .env.example, manifest) applied.
 - Phase 2 (shell/dashboard/account removal): shell + dashboard **built**; account removal n/a (no accounts on live site; Supabase = subscriptions only, kept).
-- Phase 3 (password tools): not started
+- Phase 3 (password tools): **DONE** (this session) — 10 tools live: password-generator, password-strength, username-generator, email-alias-generator, security-answer-generator, pin-generator, passphrase-generator, entropy-calculator, password-reuse-checker, leak-safety-guide. Visibility root cause (planned routes + no /tools wiring + hard-coded nav) fixed; `public/` rebuilt.
+- Learn / Security Center + dashboard upgrade: **DONE** (this session) — `/learn` hub + 8 article guides live, Learn in nav, dashboard gained hero CTA, quick tools, Security Center cards, protect-your-accounts, after-a-breach and recent-tools sections (all live-route-guarded). Build 25 snapshots, tests 84/84.
 - Phase 4 (scams/safety/recovery/guides): not started
 - Phase 5 (everyday tools): not started (optional)
 - Phase 6 (files/images): not started (optional)

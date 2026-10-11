@@ -13,6 +13,12 @@ const BreachGuard = lazy(() => import("./routes/breach-guard.jsx"));
 const Dashboard = lazy(() => import("./routes/index.jsx"));
 const NotFound = lazy(() => import("./routes/not-found.jsx"));
 const StaticPage = lazy(() => import("./routes/static-page.jsx"));
+const ToolsIndex = lazy(() => import("./routes/tools.jsx"));
+const ToolRoute = lazy(() => import("./routes/tool.jsx"));
+const LearnHub = lazy(() => import("./routes/learn.jsx"));
+const GuideRoute = lazy(() => import("./routes/guide.jsx"));
+const Report = lazy(() => import("./routes/report.jsx"));
+const Account = lazy(() => import("./routes/account.jsx"));
 
 /** Map a pathname to its route entry (supports :param patterns). */
 function findRoute(pathname) {
@@ -34,6 +40,7 @@ function PageView() {
   const route = found?.route || null;
 
   useEffect(() => {
+    if (route && (route.path === "/tools/:slug" || route.path === "/learn/:slug")) return; // page component sets its own head
     if (route) applyHead({ title: route.title, description: route.description, path: route.path });
     else applyHead({ title: `Page not found | ${PRODUCT_FULL}`, description: "", path });
   }, [route, path]);
@@ -49,6 +56,18 @@ function PageView() {
           <Dashboard />
         ) : path === "/breach-guard" ? (
           <BreachGuard />
+        ) : path === "/report" ? (
+          <Report />
+        ) : path === "/account" ? (
+          <Account />
+        ) : path === "/tools" ? (
+          <ToolsIndex />
+        ) : route.path === "/tools/:slug" ? (
+          <ToolRoute slug={found.params.slug} />
+        ) : path === "/learn" ? (
+          <LearnHub />
+        ) : route.path === "/learn/:slug" ? (
+          <GuideRoute slug={found.params.slug} />
         ) : STATIC_PAGES.has(path) ? (
           <StaticPage route={route} />
         ) : (

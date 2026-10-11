@@ -21,7 +21,7 @@ const EVENT = "safeyard:data-changed";
 
 // Category -> keys. New keys must be added here AND documented in /my-data.
 const CATEGORY_KEYS = {
-  prefs: ["theme", "favorites", "recents", "remember-flags"],
+  prefs: ["theme", "favorites", "recents", "remember-flags", "profile"],
   breach: ["breach-history"],
   progress: ["checkup", "checklists", "quizzes", "challenge", "habits"],
   tracker: ["account-tracker"],

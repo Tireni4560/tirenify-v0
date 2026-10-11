@@ -3,14 +3,14 @@
 import { useRoute, Link } from "../lib/router.jsx";
 import { PageHeader } from "../components/ui.jsx";
 import { STATIC_CONTENT } from "../lib/static-content.js";
-import { PRODUCT_FULL, COMPANY } from "../config/brand.js";
+import { PRODUCT_NAME, COMPANY } from "../config/brand.js";
 
 export default function StaticPage({ route }) {
   const { path } = useRoute();
   const content = STATIC_CONTENT[path] || { title: route?.title || "Page", body: [] };
   return (
     <div>
-      <PageHeader eyebrow={PRODUCT_FULL} title={content.title} />
+      <PageHeader eyebrow={PRODUCT_NAME} title={content.title} />
       <div className="space-y-4">
         {content.body.map((para, i) => (
           <p key={i} className="text-sm leading-relaxed text-muted-foreground">
@@ -27,7 +27,7 @@ export default function StaticPage({ route }) {
         </Link>
       </div>
       <p className="mt-8 text-xs text-muted-foreground">
-        {PRODUCT_FULL} by {COMPANY}.
+        {PRODUCT_NAME} by {COMPANY}.
       </p>
     </div>
   );

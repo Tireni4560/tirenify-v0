@@ -1,13 +1,15 @@
 // Static content for the four public legal/help pages. Kept in one place so the
 // legal wording can be reviewed together. These are the real Privacy Policy and
 // Terms, reflecting the zero-dependency design.
-import { PRODUCT_FULL, COMPANY, DATA_SOURCE, LAST_UPDATED } from "../config/brand.js";
+// PRODUCT_ATTRIBUTION ("Safeyard by Tirenify") is used exactly once per
+// phrase — never compose it again with `by ${COMPANY}`.
+import { PRODUCT_NAME, PRODUCT_ATTRIBUTION, COMPANY, DATA_SOURCE, LAST_UPDATED } from "../config/brand.js";
 
 export const STATIC_CONTENT = {
   "/privacy": {
     title: "Privacy",
     body: [
-      `What leaves your device. ${PRODUCT_FULL} makes exactly one kind of outside request: when you
+      `What leaves your device. ${PRODUCT_NAME} makes exactly one kind of outside request: when you
         run Breach Guard, your email is sent by POST to our own server, which asks ${DATA_SOURCE.name}
         to look it up. The email is sent to them to run the check. It is used only for that, never
         stored by us, and never written to logs or URLs.`,
@@ -29,7 +31,7 @@ export const STATIC_CONTENT = {
   "/terms": {
     title: "Terms",
     body: [
-      `${PRODUCT_FULL} is provided by ${COMPANY} free of charge, with no account and no signup.`,
+      `${PRODUCT_NAME} is provided by ${COMPANY} free of charge, with no account and no signup.`,
       `No guarantee. Breach results come from a third-party database and may be incomplete or out of
         date. Finding no breaches is not proof you were never exposed. Link, scam and Wi-Fi tools are
         heuristic guides, not guarantees — no tool can guarantee safety. Always use your judgement.`,
@@ -40,11 +42,11 @@ export const STATIC_CONTENT = {
     ],
   },
   "/about": {
-    title: `About ${PRODUCT_FULL}`,
+    title: `About ${PRODUCT_NAME}`,
     body: [
-      `${PRODUCT_FULL} by ${COMPANY}. Our promise: "Know Before They Do."`,
-      `${PRODUCT_FULL} is a free hub for everyday digital safety. Most tools run entirely on your
-        device, so they keep working even offline, and nothing you type is sent to us. The only
+      `${PRODUCT_NAME}. Our promise: "Know Before They Do."`,
+      `${PRODUCT_NAME} is a free hub for everyday digital safety. The tools run in your
+        browser and nothing you type is sent to us. The only
         outside request is the Breach Guard check, which asks ${DATA_SOURCE.name} whether an email
         appears in known breaches.`,
       `Built for Africa first. The advice, scam examples and recovery guides are written with African
@@ -52,6 +54,7 @@ export const STATIC_CONTENT = {
       `Data source. ${DATA_SOURCE.attribution}.`,
       `No accounts, no tracking, no ads. We don't ask you to sign up, and we don't track you.`,
       `Last updated ${LAST_UPDATED}.`,
+      `${PRODUCT_NAME} is a product of ${COMPANY}.`,
     ],
   },
   "/help": {
@@ -64,8 +67,8 @@ export const STATIC_CONTENT = {
         can clear at any time.`,
       `Why does it say "no breaches found"? That means the email wasn't in the breaches we can see.
         It isn't proof you were never exposed — some leaks never become public.`,
-      `A tool isn't working. Most tools run offline in your browser. If a page won't load, try
-        reloading it. Camera tools (like the QR scanner) need you to allow camera access.`,
+      `A tool isn't working. Most tools run in your browser. If a page won't load, try
+        reloading it.`,
       `Something looks wrong or you have feedback? Reach out to ${COMPANY}. We read every message.`,
     ],
   },

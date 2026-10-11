@@ -1,7 +1,7 @@
-// ToolPage — the layout EVERY tool uses. H1 + one-sentence purpose, offline
-// badges, tool area, aria-live result region, How-it-works accordion, Limits
-// panel (section-14 wording from the registry entry), Tips, Related tools,
-// Next steps, and copy/print/export actions where relevant.
+// ToolPage — the layout EVERY tool uses. H1 + one-sentence purpose,
+// privacy badge, tool area, aria-live result region, How-it-works accordion,
+// Limits panel (section-14 wording from the registry entry), Tips, Related
+// tools, Next steps, and copy/print/export actions where relevant.
 import { Link } from "../lib/router.jsx";
 import { PageHeader } from "./ui.jsx";
 import { Accordion, Badge, Button, Callout, CopyButton } from "./ui-kit.jsx";
@@ -10,11 +10,8 @@ import { getTool } from "../content/tools.js";
 export function ToolBadges() {
   return (
     <div className="flex flex-wrap gap-2">
-      <Badge tone="good" icon="📴">
-        Runs on your device
-      </Badge>
-      <Badge tone="info" icon="✓">
-        Works offline
+      <Badge tone="info" icon="🔒">
+        Nothing you type is uploaded
       </Badge>
     </div>
   );
