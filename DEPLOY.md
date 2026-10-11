@@ -4,7 +4,7 @@ _Last verified: 2026-10-11 on Node v24.20.0 / npm 11.19.0 (Windows). No deployme
 
 ## Current architecture and mode
 
-**Mode A — zero-config Express + committed static `public/`.** This is the same mode the last known-good production deployment used.
+**Mode A — Express + committed static `public/`.** Vercel serves committed `public/` files statically and auto-detects `server.js` as the Express function. `vercel.json` is header-only; it has no rewrites or builds.
 
 Evidence:
 - `server.js` is CommonJS, exports the Express app (`module.exports = app`) and only binds a port when run directly (`if (require.main === module) { app.listen(PORT, ...) }`). Vercel's Express auto-detection requires `server.js` and gets the exported app; `app.listen` never runs under Vercel, so no `process.env.VERCEL` guard is required.
@@ -15,8 +15,7 @@ Evidence:
 
 How each request is served under mode A (Vercel precedence):
 1. **Static file in `public/`** (CDN, before any function) — every live route has a `public/<route>/index.html` snapshot.
-2. **`vercel.json` rewrite** (SPA fallback) for any non-prerendered path, excluding `/api/`.
-3. **Express function** (`server.js`) for everything else — `/api/*` (breach check, subscribe, confirm, unsubscribe), plus its own SPA fallback and JSON 404 handler.
+2. **Express function** (`server.js`) for everything else — `/api/*` (breach check, subscribe, confirm, unsubscribe), plus its own SPA fallback and JSON 404 handler.
 
 The Express function never sees static-file requests on Vercel (the CDN serves them first), which is why security headers had to be added to `vercel.json` (see the audit below).
 
@@ -26,21 +25,20 @@ There were three disagreeing configurations; this pass resolved them to mode A.
 
 | | What it was | Resolution |
 |---|---|---|
-| **A. Production (proven live)** | Zero-config Express, no `vercel.json`, no `api/`. Framework preset Express, no build command, no output directory. | Kept as the target. `server.js` already exports the app; `public/` already committed. |
-| **B. Dashboard Project Settings** | Framework "Other" + Build Command `echo "using committed public"` + Output Directory `public`. Would drop the Express function and serve only static. | Owner must set it back to match A (see DASHBOARD CHANGES). Not fixable from the repo. |
-| **C. safeyard-hub `vercel.json`** | Added at `eec788e` ("Add Vercel serverless breach-check…") with a legacy `"builds"` entry (`api/breach-check.js` + `@vercel/node`), plus an orphaned serverless `api/breach-check.js`. | Removed the `builds` entry (and the dead `api/breach-check.js`). Replaced `vercel.json` with `headers` + `rewrites` only — no `builds`, no legacy `routes`. |
+| **A. Production (proven live)** | Express with committed `public/`; no Vercel build output is needed. | Kept as the target. `server.js` exports the app; `public/` is committed. |
+| **B. Dashboard Project Settings** | Framework Express + Build Command override `echo "using committed public"` + empty Output Directory. | Owner must keep these settings (see DASHBOARD CHANGES). |
+| **C. safeyard-hub `vercel.json`** | A catch-all rewrite sent API requests to `/index.html`, producing the POST 405. | Removed the entire `rewrites` array; kept only headers, with no `builds` or legacy `routes`. |
 
 Every line kept in the new `vercel.json`:
 - `version: 2` — current config version.
 - `headers[0].source "/(.*)"` — applies the security headers to every path (HTML, assets, the service worker). Required because static files bypass Express middleware on Vercel. Values mirror what `server.js` already sets (CSP, nosniff, DENY, no-referrer, HSTS, COOP, Permissions-Policy with camera denied except on `/tools/qr-code`).
 - `headers[1]` (`/sw.js` → `Cache-Control: no-store`) — guarantees the service worker is never long-cached.
-- `rewrites[0].source "/(?!api/)(.*)"` → `/index.html` — SPA fallback for any non-`/api/` path that is not a static file. The negative lookahead keeps `/api/*` (breach check, subscribe, confirm, unsubscribe) from ever being rewritten to the shell, so `server.js` routes are not swallowed.
 
 The `builds` entry was **not** kept. Under mode A, Vercel auto-detects `server.js` as the function and serves `public/` statically; a `builds` entry would replace that with a single function for `api/breach-check.js` and drop the Express server (which owns the subscription flow), which is exactly the breakage the `builds` approach caused.
 
 ## ROUTE TABLE
 
-Legend — served by: **static** = physical `public/<route>/index.html` (CDN, direct load + refresh both work); **rewrite** = `vercel.json` SPA fallback to `/index.html` (direct load + refresh work, client router renders); **function** = Express `server.js` route (direct load + refresh both work). Planned routes render the client-side 404 view after the shell loads.
+Legend — served by: **static** = physical `public/<route>/index.html` (CDN, direct load + refresh both work); **function** = Express `server.js` route (direct load + refresh both work). Planned routes use the Express SPA fallback and render the client-side 404 view after the shell loads.
 
 ### Live app routes (all have physical `public/<route>/index.html` snapshots)
 
@@ -76,15 +74,15 @@ Legend — served by: **static** = physical `public/<route>/index.html` (CDN, di
 | `/terms` | static | ✅ |
 | `/about` | static | ✅ |
 
-### Planned routes (no snapshot; SPA fallback serves the shell, client shows 404 view)
+### Planned routes (no snapshot; Express SPA fallback serves the shell, client shows 404 view)
 
 | Route | Served by | Direct load / refresh |
 |---|---|---|
-| `/my-data`, `/checkup`, `/privacy-check` | rewrite → `/index.html` | ✅ shell loads, client 404 |
-| `/recover`, `/recover/hacked-account`, `/recover/stolen-phone` | rewrite → `/index.html` | ✅ shell loads, client 404 |
-| `/learn/scams`, `/learn/scam-quiz` | rewrite → `/index.html` | ✅ shell loads, client 404 |
-| `/tools/link-checker`, `/tools/scam-checker`, `/tools/qr-code`, `/tools/wifi-safety`, `/tools/warning-card` | rewrite → `/index.html` | ✅ shell loads, client 404 |
-| any unknown path (e.g. `/_does-not-exist-404`) | rewrite → `/index.html` | ✅ shell loads, client 404 |
+| `/my-data`, `/checkup`, `/privacy-check` | Express SPA fallback | ✅ shell loads, client 404 |
+| `/recover`, `/recover/hacked-account`, `/recover/stolen-phone` | Express SPA fallback | ✅ shell loads, client 404 |
+| `/learn/scams`, `/learn/scam-quiz` | Express SPA fallback | ✅ shell loads, client 404 |
+| `/tools/link-checker`, `/tools/scam-checker`, `/tools/qr-code`, `/tools/wifi-safety`, `/tools/warning-card` | Express SPA fallback | ✅ shell loads, client 404 |
+| any unknown path (e.g. `/_does-not-exist-404`) | Express SPA fallback | ✅ shell loads, client 404 |
 
 ### server.js function routes (never rewritten; always the Express function)
 
@@ -125,7 +123,7 @@ Note: changing any environment variable in the dashboard only applies to **new**
 
 | # | Item | Verdict | Evidence / note |
 |---|---|---|---|
-| 1 | Config conflict (A vs B vs C) | **FIXED** | `vercel.json` rewritten to `headers`+`rewrites` (no `builds`); owner sets dashboard to match A. |
+| 1 | Config conflict (A vs B vs C) | **FIXED** | Catch-all rewrite removed from `vercel.json`; headers remain, no `builds`; owner sets dashboard to Express + committed-public mode. |
 | 2 | Express on Vercel (entry, exports, runtime) | **PASS** | `server.js` CommonJS (no `"type":"module"` at root), explicit relative imports with `.js`, no TS/Vite-only syntax in server code; `module.exports = app`; `require.main === module` guards `listen`. `lib/*` reads are included in the function bundle. |
 | 3 | Routing (deep links, refresh, 404, root paths) | **PASS** | Smoke 68/68; Vercel-precedence emulator: live routes → static, planned/unknown → rewrite → shell, `/api/*` → function (not swallowed). |
 | 4 | Environment variables | **PARTIAL** | 4 Supabase/Resend vars set; `APP_URL` + `VITE_APP_URL` not set (safe code defaults exist) → owner adds. |
@@ -144,7 +142,7 @@ Note: changing any environment variable in the dashboard only applies to **new**
 - The selected Node major on the dashboard (24.x vs 22.x) — owner must confirm; must be **24.x** to match `engines`.
 - Function region and max duration — default region `iad1`, max duration 300s on Hobby (per docs). Not overridden in `vercel.json`; owner can confirm in Project Settings.
 - The 3 extra domains — names not seen; owner must confirm they are aliases of `check.tirenify.app` (the legacy-host 301 only activates if `APP_URL` host differs from `check.tirenify.app`).
-- Whether the `safeyard-hub` preview's API worked — moot now; the new `vercel.json` has no `builds`, so the preview will use the same zero-config Express as production once the dashboard is aligned.
+- Whether the `safeyard-hub` preview's API worked — the prior 405 was caused by the catch-all rewrite; after this fix the preview will use the Express route once the dashboard is aligned.
 - Team-level "Separate Production Secret Values" policy state — owner must confirm whether Preview and Production share the same secret values (both currently use the same four names).
 
 ### Hygiene notes (report only; none break production)
@@ -160,7 +158,7 @@ Every change below is the smallest that resolves a FAIL. Undo = revert the singl
 
 | File | Change | Reason | Risk | Undo |
 |---|---|---|---|---|
-| `vercel.json` | Replaced the legacy `builds` entry with `headers` (security headers on `/sw.js` + all paths) and a `rewrites` SPA fallback `/(?!api/)(.*)` → `/index.html`. No `builds`, no `routes`. | Config conflict C: `builds` would replace zero-config Express with a single `api/breach-check.js` function and drop the subscription flow. Headers must cover static files (they bypass Express middleware). Rewrite excludes `/api/` so `server.js` routes are never swallowed. | Low — mirrors existing Express headers; rewrite only fires for non-static, non-`/api/` paths. | `git checkout vercel.json` |
+| `vercel.json` | Removed the catch-all `rewrites` array; retained security headers and `/sw.js` no-store. No `builds`, no `routes`. | The catch-all rewrite sent `POST /api/breach-check` to `/index.html`, causing 405. Headers must cover static files because they bypass Express middleware. | Low — Express owns API and SPA fallback behavior. | `git checkout vercel.json` |
 | `api/breach-check.js` | Deleted. | Dead mode-C serverless function (the `builds` entry's src). `POST /api/breach-check` is fully served by `server.js` (shared core `lib/breach-check.js`), which is what production (mode A) already uses. | None — the API is served by `server.js` in mode A. | `git checkout api/breach-check.js` (restore file; not needed under mode A) |
 | `public/sw.js` | Created a minimal service worker: cache-first app shell, network-first navigations, never caches `/api/*`, `skipWaiting`+`clients.claim` update flow. | The PWA audit requires `sw.js` (it was deleted from the repo in an earlier phase). Served at `/sw.js` with `Cache-Control: no-store` from `vercel.json`. | Low — best-effort; app works without it. | `git rm public/sw.js` (and remove the `/sw.js` cache header if desired) |
 | `src/main.jsx` | Registered `/sw.js` after window load (best-effort, `onupdatefound` handles updates). | Required for the SW to run; the PWA audit. | Low — registration is best-effort and non-blocking. | `git checkout src/main.jsx` |
@@ -178,16 +176,16 @@ Set these in Vercel → Project → Settings **before** merging to `main`. (Veri
 
 | Setting | Value | Status |
 |---|---|---|
-| Framework Preset | **Express** (was "Other") | Verified — the live production deployment used auto-detected Express. |
-| Build Command | **off / empty** (remove the `echo "using committed public"` override) | Verified — live production had no build command. |
-| Output Directory | **off / empty** (remove the `public` override) | Verified — live production had no output directory; `public/` is served as-is. |
+| Framework Preset | **Express** | Required — this keeps `server.js` as the Vercel function. |
+| Build Command | **override ON:** `echo "using committed public"` | Required — do not run Vite on Vercel; committed `public/` is the deploy output. |
+| Output Directory | **empty / override off** | Required — Express serves committed `public/`; do not set `public` as a static-only output directory. |
 | Install Command | default (leave empty) | Verified — default installs from the committed lockfile. |
 | Node.js Version | **24.x** (must match `engines: "24"`) | Inferred (dashboard offers 22.x/24.x; local Node is 24 — owner confirms the selected value). |
 | `APP_URL` env var | `https://check.tirenify.app` — Production **and** Preview | Not set; code has a safe default but set it explicitly so email links/sitemap are unambiguous. |
 | `VITE_APP_URL` env var | `https://check.tirenify.app` — Production **and** Preview | Not set; safe default in code; set it to match `APP_URL`. |
 | 4 existing vars (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`) | keep as-is for Production + Preview | Verified present. |
 
-**"Production Overrides differ" warning:** it appears because the current production deployment was built with the old auto-detected-Express settings while Project Settings now say "Other + echo + output public". Once the settings above are applied, the **next production deploy** will build using the dashboard settings, the deployment and settings will match, and the warning disappears. Do not re-add a `builds` entry to `vercel.json`.
+**Dashboard alignment:** set the Framework Preset to Express, keep the `echo "using committed public"` build override on, leave Output Directory empty/override off, and select Node 24.x. Do not re-add a `rewrites` or `builds` entry to `vercel.json`.
 
 **Preview safety:** Vercel Authentication is off, so previews are public and share the production Supabase/Resend. Recommend (not implemented): turn on Preview Protection, or add a guard so `/api/email/subscribe` refuses signups when `VERCEL_ENV === "preview"` (only if you expose that system env var).
 

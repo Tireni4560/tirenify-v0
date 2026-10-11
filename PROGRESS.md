@@ -1,5 +1,9 @@
 # PROGRESS.md — Safeyard by Tirenify
 
+## THIS SESSION — Vercel API 405 fix (DONE)
+
+- Removed the catch-all Vercel rewrite so `POST /api/breach-check` reaches Express; dashboard must use Express, the echo build override, empty output directory, and Node 24.
+
 ## THIS SESSION — shell UI fixes (DONE)
 
 - Centered odd final cards and widened shared card grids slightly, including the six-plus-QR tools layout, without changing logic.
