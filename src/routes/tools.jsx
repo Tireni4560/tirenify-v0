@@ -39,12 +39,20 @@ export default function ToolsIndex() {
           description={`${resolved.blurb} No account needed — nothing you type is uploaded.`}
         />
         {items.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {items.map((t) => {
+          <div className="mx-auto grid max-w-3xl gap-3 md:grid-cols-2">
+            {items.map((t, index) => {
               const tool = t.slug === "__breach-guard__" ? t : getTool(t.slug);
               const to = t.slug === "__breach-guard__" ? "/breach-guard" : `/tools/${t.slug}`;
               return (
-                <Link key={t.slug} to={to} className="surface block p-5 transition-colors hover:bg-secondary/50">
+                <Link
+                  key={t.slug}
+                  to={to}
+                  className={`surface block w-full max-w-md justify-self-center p-5 transition-colors hover:bg-secondary/50 ${
+                    t.slug === "qr-code-generator" || (items.length % 2 === 1 && index === items.length - 1)
+                      ? "md:col-span-2"
+                      : ""
+                  }`}
+                >
                   <h3 className="font-medium">{tool?.name || t.name}</h3>
                   <p className="mt-1.5 text-sm text-muted-foreground">{tool?.purpose || t.purpose}</p>
                 </Link>
@@ -74,12 +82,16 @@ export default function ToolsIndex() {
         {groups.map((g) => (
           <section key={g.key} id={g.key} aria-label={g.label} className="scroll-mt-24">
             <h2 className="text-base font-semibold">{g.label}</h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {g.tools.map((t) => (
+            <div className="mx-auto mt-3 grid max-w-3xl gap-3 md:grid-cols-2">
+              {g.tools.map((t, index) => (
                 <Link
                   key={t.slug}
                   to={`/tools/${t.slug}`}
-                  className="surface block p-5 transition-colors hover:bg-secondary/50"
+                  className={`surface block w-full max-w-md justify-self-center p-5 transition-colors hover:bg-secondary/50 ${
+                    t.slug === "qr-code-generator" || (g.tools.length % 2 === 1 && index === g.tools.length - 1)
+                      ? "md:col-span-2"
+                      : ""
+                  }`}
                 >
                   <h3 className="font-medium">{t.name}</h3>
                   <p className="mt-1.5 text-sm text-muted-foreground">{t.purpose}</p>

@@ -114,7 +114,7 @@ export default function Dashboard() {
         description={`${TAGLINE}. Free digital safety tools — plus Breach Guard for checking if your email was exposed.`}
       />
 
-      <section className="surface p-6" aria-label="Start here">
+      <section className="surface mx-auto max-w-3xl p-6" aria-label="Start here">
         <h2 className="text-lg font-semibold">Know before they do</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Check whether your email appeared in known data breaches, then work through the steps
@@ -139,7 +139,7 @@ export default function Dashboard() {
         </p>
       </section>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <div className="mx-auto mt-8 grid max-w-3xl gap-4 sm:grid-cols-2">
         <div className="surface p-6 sm:col-span-2">
           <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center">
             <ScoreRing score={score.score} level={score.level} />

@@ -406,7 +406,7 @@ export default function BreachGuard() {
         description="Enter your email to see which known breaches included it, when they happened, and what data was exposed. Nothing is stored, and we never log your email."
       />
 
-      <form onSubmit={submit} className="surface p-5 sm:p-6" noValidate>
+      <form onSubmit={submit} className="surface mx-auto max-w-3xl p-5 sm:p-6" noValidate>
         <label htmlFor="breachEmail" className="block text-sm font-medium">
           Email address
         </label>
@@ -485,7 +485,7 @@ export default function BreachGuard() {
       {/* Results */}
       {phase === "done" && result && (
         <div className="mt-8" aria-live="polite">
-          <div className="surface p-6">
+          <div className="surface mx-auto max-w-3xl p-6">
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <h2 className="text-2xl font-semibold">
                 {result.breaches.length === 0
@@ -631,7 +631,7 @@ export default function BreachGuard() {
                 Breaches ({sorted.length}
                 {typeFilter ? ` matching ${typeFilter}` : ""})
               </h3>
-              <ul className="mt-3 space-y-4">
+              <ul className="mx-auto mt-3 max-w-3xl space-y-4">
                 {sorted.slice(0, visible).map((b) => (
                   <BreachCard key={`${b.name}-${b.date || ""}`} breach={b} />
                 ))}

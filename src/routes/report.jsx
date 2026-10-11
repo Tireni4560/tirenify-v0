@@ -44,7 +44,7 @@ export default function Report() {
           title="Security Report"
           description="A print-friendly summary of your score, breach checks and habits — built only from data on this device."
         />
-        <div className="surface p-8 text-center">
+        <div className="surface mx-auto max-w-3xl p-8 text-center">
           <p className="text-base font-semibold">Nothing to report yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
             This report is built from real checks you run on this device — we never invent scores.
@@ -92,7 +92,7 @@ export default function Report() {
         </button>
       </PageHeader>
 
-      <div className="space-y-6">
+      <div className="mx-auto max-w-3xl space-y-6">
         <section className="surface p-6" aria-label="Score">
           <div className="flex items-center justify-between gap-4">
             <div>

@@ -55,7 +55,7 @@ export function ToolPage({
         <ToolBadges />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="mx-auto grid max-w-3xl gap-6 lg:grid-cols-2">
         <section aria-label="Inputs" className="surface h-fit p-6">
           {form}
         </section>
@@ -80,13 +80,13 @@ export function ToolPage({
       </div>
 
       {howItWorks && (
-        <div className="mt-6">
+        <div className="mx-auto mt-6 max-w-3xl">
           <Accordion items={[{ id: "how", title: "How it works", body: howItWorks }]} />
         </div>
       )}
 
       {tool?.limits && (
-        <div className="mt-6">
+        <div className="mx-auto mt-6 max-w-3xl">
           <LimitsPanel text={tool.limits} />
         </div>
       )}

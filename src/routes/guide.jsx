@@ -41,7 +41,7 @@ export default function GuideRoute({ slug }) {
       <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-primary">Learn</p>
       <h1 className="text-3xl font-semibold sm:text-4xl">{guide.title}</h1>
       <p className="mt-2 max-w-2xl text-muted-foreground">{guide.summary}</p>
-      <div className="mt-6 space-y-6">
+      <div className="mx-auto mt-6 max-w-3xl space-y-6">
         {guide.sections.map((s, i) => (
           <section key={i} className="surface p-6">
             <h2 className="text-lg font-semibold">{s.heading}</h2>

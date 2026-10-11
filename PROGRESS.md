@@ -2,6 +2,8 @@
 
 ## THIS SESSION — shell UI fixes (DONE)
 
+- Centered odd final cards and widened shared card grids slightly, including the six-plus-QR tools layout, without changing logic.
+
 - Fixed mobile hamburger state/drawer wiring, desktop top spacing/sidebar alignment, and removed sidebar nav checkmarks.
 
 > Resume file for any agent. Update this file **after every phase** with: done / not done / decisions / how to run and verify / deploy notes.
@@ -484,3 +486,37 @@ Deletion log (2026-10-10, Phase A session):
 - Phase 6 (files/images): not started (optional)
 - Phase 7 (invoice): not started (optional)
 - Phase 8 (hardening/offline/quality): not started (required for whatever exists). Deferred from Phase 1: zero-network headless-Chrome test + Lighthouse numbers.
+
+---
+
+## VERCEL PRODUCTION-READINESS PASS (2026-10-11)
+
+Goal: make the Safeyard app (Vite+React front end committed into `public/`, Express `server.js` + `lib/`) work on Vercel exactly like the last known-good production deployment (mode A: zero-config Express + committed static `public/`). No deployment performed.
+
+### Findings
+- Three configurations disagreed: (A) live production = zero-config Express, no `vercel.json`, no `api/`; (B) dashboard Project Settings = "Other + `echo "using committed public"` + output `public`"; (C) safeyard-hub `vercel.json` = legacy `builds` entry (`api/breach-check.js` + `@vercel/node`) added at `eec788e`. Resolved to A.
+- `public/` was already **fresh** (production rebuild produced a byte-identical tree; `git status --porcelain public/` empty).
+- The `src/main.jsx` worker registration was added late in the pass, so the bundle hash changed; `public/` was regenerated from that source so the committed output matches exactly what was verified (hashed assets differ from the earlier committed hashes).
+- `npm install` exit 0 (lockfile consistent; `npm ci` blocked only by a Windows AV file-lock, not a mismatch).
+- Built `public/` grep for secrets: only false positives (data-type names, "modulepreload", public `VITE_APP_URL` default). No real secrets.
+
+### Changes
+- `vercel.json`: removed `builds`; added `headers` (security headers for all paths + `Cache-Control: no-store` on `/sw.js`) and a `rewrites` SPA fallback `/(?!api/)(.*)` → `/index.html`. No `routes`.
+- `api/breach-check.js`: deleted (dead mode-C serverless function; `POST /api/breach-check` is served by `server.js`).
+- `public/sw.js`: created (was missing from the repo) — cache-first shell, network-first navigations, never caches `/api/*`, update flow.
+- `src/main.jsx`: registered `/sw.js` (best-effort).
+- `package.json`: `engines.node` `"24"` (was `">=20"`), matching the tested local Node 24.
+- New: `scripts/smoke.mjs`, `scripts/vercel-emu.mjs`, `tests/breach-check.test.js`.
+
+### Verification (local, production-mode `node server.js`)
+- `scripts/smoke.mjs`: **70/70 ALL PASSED** (every live route 200+title, SPA fallback, 404s, key statics+content-types, security headers on `/` and a hashed asset, `/api/breach-check` invalid-email 400, `--live` one call test@example.com 200).
+- `scripts/vercel-emu.mjs`: **ALL PASSED** (live routes → static, planned/unknown → rewrite → shell, `/api/*` → function not swallowed).
+- Vitest: **15 files / 106 tests ALL PASSED** (incl. new mocked breach-check regression test).
+- Headless Chrome with the production headers on `/` and `/tools/password-generator`: **zero CSP violations, zero console errors**, app renders.
+- Server logs during the smoke run: **no email / request body / response body logged**.
+
+### Owner actions (blocked on the dashboard, not the repo)
+- Set Framework Preset = Express, Build/Output overrides off, Install default, Node 24.x.
+- Add `APP_URL` + `VITE_APP_URL` env vars (Prod + Preview) = `https://check.tirenify.app`.
+- Manual browser PWA check (SW registered + offline reload) — not automatable here without adding a dependency.
+- Preview is public (Vercel Auth off) and shares production Supabase/Resend; recommend Preview Protection or a `VERCEL_ENV === "preview"` guard on `/api/email/subscribe` (recommendation only).

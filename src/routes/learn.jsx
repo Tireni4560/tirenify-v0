@@ -21,12 +21,14 @@ export default function LearnHub() {
         {groups.map((g) => (
           <section key={g.key} aria-label={g.label}>
             <h2 className="text-base font-semibold">{g.label}</h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {g.guides.map((guide) => (
+            <div className="mx-auto mt-3 grid max-w-3xl gap-3 md:grid-cols-2">
+              {g.guides.map((guide, index) => (
                 <Link
                   key={guide.slug}
                   to={`/learn/${guide.slug}`}
-                  className="surface block p-5 transition-colors hover:bg-secondary/50"
+                  className={`surface block w-full max-w-md justify-self-center p-5 transition-colors hover:bg-secondary/50 ${
+                    g.guides.length % 2 === 1 && index === g.guides.length - 1 ? "md:col-span-2" : ""
+                  }`}
                 >
                   <h3 className="font-medium">{guide.title}</h3>
                   <p className="mt-1.5 text-sm text-muted-foreground">{guide.summary}</p>

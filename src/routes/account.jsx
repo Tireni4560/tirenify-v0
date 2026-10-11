@@ -29,7 +29,7 @@ export default function Account() {
         description="Saved on this device. Full accounts are coming soon."
       />
 
-      <form onSubmit={save} className="surface max-w-lg p-6">
+      <form onSubmit={save} className="surface mx-auto max-w-xl p-6">
         <div className="flex items-center gap-4">
           <span
             aria-hidden="true"
