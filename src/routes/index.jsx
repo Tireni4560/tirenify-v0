@@ -1,108 +1,104 @@
-// Dashboard (home) — the slim overview only. Score, breaches, habits, recent
-// activity and the clear-data panel all read device storage; math lives in
-// lib/score.js. Categorized tool grids, Learn cards, the Account form and the
-// full Security Report live in the sidebar nav and their own routes — NOT here.
-import { useEffect, useMemo, useState } from "react";
+// Dashboard (home) — the slim overview. Order follows the beta-feedback
+// hierarchy: start here (primary action) → latest check + score → "Do this
+// first" → habits/activity/data → Explore tools LAST. The score comes from
+// the shared computeSecurityScore()/ScoreCard so it always matches the Breach
+// Guard page. The full breach result lives only in the in-memory session store
+// (lib/check-session.js); device storage keeps the masked summary only.
+import { useMemo } from "react";
 import { Link } from "../lib/router.jsx";
-import { PageHeader } from "../components/ui.jsx";
+import { PageHeader, Chip } from "../components/ui.jsx";
+import { ScoreCard } from "../components/score-card.jsx";
+import { DoThisFirst } from "../components/do-this-first.jsx";
+import { ExploreTools } from "../components/explore-tools.jsx";
+import { HabitsChecklist } from "../components/habits-checklist.jsx";
 import { getBreachHistory, clearAllSafeyardData, useSafeyardDataVersion } from "../lib/device-storage.js";
-import { scoreDashboard } from "../lib/score.js";
+import { useCheckSession, clearCheckSession, computeSecurityScore } from "../lib/check-session.js";
+import { useHabits, doneHabitIndexes } from "../lib/habits-store.js";
+import { getDoThisFirst } from "../lib/next-steps.js";
+import { selectFeaturedTools } from "../content/tools.js";
+import { classifyDataType } from "../lib/severity.js";
 import { PRODUCT_NAME, PRODUCT_FULL, TAGLINE } from "../config/brand.js";
-import { HABITS } from "../content/habits.js";
-
-const HABITS_KEY = "safeyard:habits";
-
-function loadJSON(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveJSON(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    window.dispatchEvent(new Event("safeyard:data-changed"));
-  } catch {
-    /* ignore */
-  }
-}
-
-function ScoreRing({ score, level }) {
-  const tone =
-    level === "Strong"
-      ? "text-success"
-      : level === "Fair"
-        ? "text-primary"
-        : level === "Weak"
-          ? "text-warning"
-          : "text-muted-foreground";
-  const C = 2 * Math.PI * 40;
-  const clamped = Math.max(0, Math.min(100, Number(score) || 0));
-  return (
-    <div className="relative grid h-28 w-28 shrink-0 place-items-center" role="img" aria-label={`Security score ${clamped} out of 100, ${level}`}>
-      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full -rotate-90 z-0" aria-hidden="true">
-        <circle cx="50" cy="50" r="40" fill="none" stroke="var(--border-subtle, #e2e5ec)" strokeWidth="10" />
-        <circle
-          cx="50"
-          cy="50"
-          r="40"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="10"
-          strokeLinecap="round"
-          strokeDasharray={`${(clamped / 100) * C} ${C}`}
-          className={tone}
-        />
-      </svg>
-      <div className="relative z-10 flex flex-col items-center justify-center text-center">
-        <p className="font-display text-3xl font-bold text-foreground">{clamped}</p>
-        <p className={`text-xs font-semibold pt-1 ${tone}`}>{level}</p>
-      </div>
-    </div>
-  );
-}
 
 export default function Dashboard() {
-  const [habits, setHabits] = useState(() => loadJSON(HABITS_KEY, {}));
+  // ONE habits source of truth: same ticks, count and score as Breach Guard.
+  const {
+    habits,
+    done: habitsDone,
+    total: habitsTotal,
+    toggle: toggleHabitStore,
+    habitsScore,
+  } = useHabits();
   const dataVersion = useSafeyardDataVersion();
+  const session = useCheckSession();
 
   const history = useMemo(() => getBreachHistory(), [dataVersion]);
   const latest = history[0] || null;
 
-  const habitsScore = useMemo(
-    () => (Object.values(habits).filter(Boolean).length / HABITS.length) * 100,
-    [habits],
-  );
+  // ONE scoring path shared with Breach Guard (and Report) — same number everywhere.
   const score = useMemo(
-    () =>
-      scoreDashboard({
-        breachesFound: latest ? latest.count : null,
-        habitsScore,
-        checkupScore: null,
-      }),
-    [latest, habitsScore],
+    () => computeSecurityScore({ session, history, habitsScore }),
+    [session, history, habitsScore],
   );
-  const habitsDone = HABITS.filter((_, i) => habits[i]).length;
 
-  useEffect(() => {
-    setHabits(loadJSON(HABITS_KEY, {}));
-  }, [dataVersion]);
+  // Latest-check facts: the in-session full result when present, otherwise the
+  // masked summary row from device storage (after a reload / return visit).
+  const latestCheck = useMemo(() => {
+    if (session?.result) {
+      const types = [...new Set(session.result.breaches.flatMap((b) => b.dataTypes || []))];
+      return {
+        masked: session.masked,
+        count: session.result.breaches.length,
+        types,
+        risk: null, // in-session risk reads via the score card; stored rows keep their label
+        at: session.checkedAt,
+        live: true,
+      };
+    }
+    if (latest) {
+      return {
+        masked: latest.masked,
+        count: latest.count,
+        types: latest.types || [],
+        risk: latest.risk || null,
+        at: latest.at,
+        live: false,
+      };
+    }
+    return null;
+  }, [session, latest]);
 
-  function toggleHabit(i) {
-    setHabits((prev) => {
-      const next = { ...prev, [i]: !prev[i] };
-      saveJSON(HABITS_KEY, next);
-      return next;
-    });
-  }
+  const doThisFirst = useMemo(
+    () =>
+      latestCheck
+        ? getDoThisFirst({
+            types: latestCheck.types,
+            count: latestCheck.count,
+            doneHabits: doneHabitIndexes(habits),
+          })
+        : [],
+    [latestCheck, habits],
+  );
+
+  const featuredTools = useMemo(() => selectFeaturedTools({ limit: 6 }), []);
+
+  /** Live-region text for a habit tick: "... Safety habits N of 4. Score S." */
+  const habitsScoreText = useMemo(
+    () =>
+      (nextDone) => {
+        const s = computeSecurityScore({
+          session,
+          history,
+          habitsScore: (nextDone / habitsTotal) * 100,
+        });
+        return `Score ${s.score}.`;
+      },
+    [session, history, habitsTotal],
+  );
 
   function clearData() {
-    if (window.confirm("Clear all Safeyard data stored on this device?")) {
+    if (window.confirm(`Clear all ${PRODUCT_NAME} data stored on this device?`)) {
+      clearCheckSession();
       clearAllSafeyardData();
-      setHabits({});
     }
   }
 
@@ -140,28 +136,44 @@ export default function Dashboard() {
       </section>
 
       <div className="mx-auto mt-8 grid max-w-3xl gap-4 sm:grid-cols-2">
-        <div className="surface p-6 sm:col-span-2">
-          <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center">
-            <ScoreRing score={score.score} level={score.level} />
-            <div>
-              <h2 className="text-base font-semibold">Your security score</h2>
-              <p className="text-sm text-muted-foreground">
-                We check what&apos;s actually true on this device, not from a cloud profile. 50% comes
-                from your last breach check, 30% from the safety habits below and 20% from the
-                security checkup. Anything missing shows as “Partial” — never a fake full score.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="surface p-6">
-          <h2 className="text-base font-semibold">Breaches found</h2>
-          {latest ? (
+        {/* Latest check — status first */}
+        <div className="surface p-6 sm:col-span-2" aria-label="Latest check">
+          <h2 className="text-base font-semibold">Latest check</h2>
+          {latestCheck ? (
             <div className="mt-2">
-              <p className="font-display text-4xl font-bold">{latest.count}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Last check: {latest.masked} · {new Date(latest.at).toLocaleDateString()}
+              <p className="font-display text-4xl font-bold">
+                {latestCheck.count}
+                <span className="ml-2 align-middle text-base font-semibold text-muted-foreground">
+                  breach{latestCheck.count === 1 ? "" : "es"} found
+                </span>
               </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {latestCheck.masked} · {new Date(latestCheck.at).toLocaleDateString()}
+                {latestCheck.risk ? ` · Risk: ${latestCheck.risk}` : ""}
+              </p>
+              {latestCheck.types.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {latestCheck.types.slice(0, 8).map((raw) => {
+                    const c = classifyDataType(raw);
+                    return (
+                      <Chip key={raw} className={c.chip} title={c.explain}>
+                        {c.name}
+                      </Chip>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="mt-3 text-xs text-muted-foreground">
+                {latestCheck.live
+                  ? "Open Breach Guard for the full list of breaches and details."
+                  : "Run a new check to see the full list of breaches."}
+              </p>
+              <Link
+                to="/breach-guard"
+                className="mt-3 inline-block rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-secondary"
+              >
+                Open Breach Guard
+              </Link>
             </div>
           ) : (
             <div className="mt-2">
@@ -178,27 +190,21 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="surface p-6">
-          <h2 className="text-base font-semibold">Safety habits</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {habitsDone}/{HABITS.length} done — stored on this device only.
-          </p>
-          <ul className="mt-3 space-y-2">
-            {HABITS.map((label, i) => (
-              <li key={label}>
-                <label className="flex min-h-[44px] cursor-pointer items-start gap-2.5 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={!!habits[i]}
-                    onChange={() => toggleHabit(i)}
-                    className="mt-1 h-4 w-4 accent-[var(--color-primary)]"
-                  />
-                  <span>{label}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {/* Shared score card — same component and math as Breach Guard */}
+        <ScoreCard score={score} />
+
+        {/* Next steps — top slice of the advice, links to live routes only */}
+        <DoThisFirst actions={doThisFirst} className="sm:col-span-2" />
+
+        {/* Habits — shared checklist (same ONE component as Breach Guard); the
+            disclosure keeps status first without hiding the rows behind navigation. */}
+        <HabitsChecklist
+          habits={habits}
+          onToggle={toggleHabitStore}
+          getScoreText={(nextDone) => habitsScoreText(nextDone)}
+          variant="details"
+          className="sm:col-span-2"
+        />
 
         <div className="surface p-6">
           <h2 className="text-base font-semibold">Recent activity</h2>
@@ -234,6 +240,9 @@ export default function Dashboard() {
             Clear data stored on this device
           </button>
         </div>
+
+        {/* Tool discovery — LAST on the page; selector keeps only live routes */}
+        <ExploreTools items={featuredTools} className="sm:col-span-2" />
       </div>
     </div>
   );

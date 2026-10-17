@@ -12,11 +12,17 @@
 //   keywords   search terms (synonyms, local words)
 //   icon       lucide icon NAME (string; resolved by the UI, never a component)
 //   priority   dashboard "quick tools" order (lower first)
+//   featured   OPTIONAL dashboard "Explore tools" order (lower first); only
+//              tools whose /tools/<slug> route is live are ever selected
+//   featuredNote  OPTIONAL one-line description (<=70 chars) for featured lists
 //   related    slugs of related tools/guides (must all exist)
 //   limits     short Limits-panel text (from the section-14 register)
 import { CATEGORIES } from "../config/brand.js";
+import { LIVE_ROUTES } from "../config/routes.js";
 
 export const TOOL_CATEGORIES = Object.keys(CATEGORIES);
+
+const LIVE = new Set(LIVE_ROUTES.map((r) => r.path));
 
 export const TOOLS = [
   {
@@ -27,6 +33,8 @@ export const TOOLS = [
     keywords: ["password", "generator", "random", "security", "create password", "passphrase"],
     icon: "KeyRound",
     priority: 1,
+    featured: 1,
+    featuredNote: "Make strong, random passwords in your browser.",
     related: ["password-strength", "entropy-calculator", "passphrase-generator"],
     limits: "Only uses your browser's secure random number generator. We never see or store the passwords you type or generate.",
   },
@@ -38,6 +46,8 @@ export const TOOLS = [
     keywords: ["strength", "check", "guess", "entropy", "password check", "how strong"],
     icon: "ShieldCheck",
     priority: 2,
+    featured: 2,
+    featuredNote: "Get signals about how hard a password is to guess.",
     related: ["password-generator", "entropy-calculator", "password-reuse-checker"],
     limits: "This is an estimate, not a guarantee. It flags repeated strings, common patterns and missing character classes so you can improve the password yourself.",
   },
@@ -93,6 +103,8 @@ export const TOOLS = [
     keywords: ["passphrase", "diceware", "master password", "memorable", "long password"],
     icon: "Clapperboard",
     priority: 7,
+    featured: 6,
+    featuredNote: "Generate long, memorable passphrases for a master secret.",
     related: ["password-generator", "password-strength"],
     limits: "Longer is stronger. Pick a separator you can type on the devices you use, and store the result in a password manager.",
   },
@@ -115,6 +127,8 @@ export const TOOLS = [
     keywords: ["reuse", "repeat", "checker", "paste", "better password"],
     icon: "ListChecks",
     priority: 9,
+    featured: 3,
+    featuredNote: "See which pasted passwords repeat — never stored or sent.",
     related: ["password-strength", "password-generator", "leak-safety-guide"],
     limits: "Comparing only on this device, so it can only flag identical lines you paste. It does not check against any database.",
   },
@@ -126,6 +140,8 @@ export const TOOLS = [
     keywords: ["breach", "leak", "hacked", "what now", "recovery", "steps"],
     icon: "FileText",
     priority: 10,
+    featured: 5,
+    featuredNote: "A calm, ordered checklist for what to do after a breach.",
     related: ["password-strength", "password-reuse-checker", "security-answer-generator"],
     limits: "A guide, not a diagnosis. Follow the steps in order, and change passwords only on sites you can reach safely.",
   },
@@ -137,6 +153,8 @@ export const TOOLS = [
     keywords: ["qr", "code", "barcode", "url", "link", "scan", "png", "svg", "generate"],
     icon: "QrCode",
     priority: 11,
+    featured: 4,
+    featuredNote: "Turn any text or URL into a QR code you can download.",
     related: [],
     limits: "A QR code is only an encoded copy of what you enter — scanners show exactly that text, no more. Test-scan before printing, and never put passwords or one-time codes into a code you'll share.",
   },
@@ -193,4 +211,51 @@ export function searchTools(query, tools = TOOLS) {
     if (score > 0) scored.push({ tool: t, score });
   }
   return scored.sort((a, b) => b.score - a.score).map((s) => s.tool);
+}
+
+/**
+ * Featured "Explore tools" selection for the Dashboard and result pages.
+ * Selection rule: ONLY tools whose /tools/<slug> route exists in the live
+ * route table (never a dead link), ordered by the additive `featured` field
+ * (lower first, `priority` breaks ties), capped at `limit`.
+ * @returns {Array<tool & {to: string, description: string}>}
+ */
+export function selectFeaturedTools({ tools = TOOLS, live = LIVE, limit = 5 } = {}) {
+  const liveSet = live instanceof Set ? live : new Set(live);
+  return tools
+    .filter((t) => typeof t.featured === "number" && liveSet.has(`/tools/${t.slug}`))
+    .sort((a, b) => a.featured - b.featured || a.priority - b.priority)
+    .slice(0, Math.max(0, limit))
+    .map((t) => ({
+      ...t,
+      to: `/tools/${t.slug}`,
+      description: t.featuredNote || t.purpose,
+    }));
+}
+
+/**
+ * Result-relevant tool selection ("Explore more tools" on Breach Guard): the
+ * same featured pool, re-ranked so tools matching the exposed data types come
+ * first; featured order breaks ties. Live routes only, like above.
+ * @param {{types?: string[], tools?: Array, live?: Set|string[], limit?: number}} input
+ * @returns {Array<tool & {to: string, description: string}>}
+ */
+export function selectRelatedTools({ types = [], tools = TOOLS, live = LIVE, limit = 3 } = {}) {
+  const pool = selectFeaturedTools({ tools, live, limit: Number.MAX_SAFE_INTEGER });
+  // Match on word stems so "Passwords" matches the word "password".
+  const stems = types
+    .join(" ")
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .map((w) => (w.length > 4 ? w.replace(/s$/, "") : w))
+    .filter((w) => w.length >= 3);
+  const relevance = (t) => {
+    const hay = `${t.name} ${t.purpose} ${(t.keywords || []).join(" ")}`.toLowerCase();
+    return stems.reduce((n, s) => (hay.includes(s) ? n + 1 : n), 0);
+  };
+  return pool
+    .map((t, i) => ({ t, i, score: relevance(t) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .slice(0, Math.max(0, limit))
+    .map((x) => x.t);
 }

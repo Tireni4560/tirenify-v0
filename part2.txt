@@ -1,0 +1,38 @@
+
+function frame(obj) {
+  const p = JSON.stringify(obj), len = Buffer.byteLength(p);
+  const mask = Buffer.from([1, 2, 3, 4]);
+  const m = Buffer.from(p);
+  for (let i = 0; i < m.length; i++) m[i] ^= mask[i % 4];
+  const b = Buffer.alloc(2 + 4 + len);
+  b[0] = 0x81; b[1] = 0x80 | len; b[2] = mask[0]; b[3] = mask[1]; b[4] = mask[2]; b[5] = mask[3];
+  m.copy(b, 6); return b;
+}
+
+class Cdp {
+  constructor(sock) { this.sock = sock; this.id = 0; this.cbs = new Map(); this.once = new Map(); }
+  _pump() {
+    const q = this.sock._q;
+    while (q.length) {
+      const msg = q.shift();
+      if (msg.id && this.cbs.has(msg.id)) { this.cbs.get(msg.id)(msg); this.cbs.delete(msg.id); }
+      else if (msg.method) {
+        const l = this.once.get(msg.method) || [];
+        if (l.length) l.shift()(msg.params);
+      }
+    }
+  }
+  send(m, p = {}) {
+    return new Promise((res, rej) => { const id = ++this.id; this.cbs.set(id, res); this.sock.write(frame({ id, method: m, params: p })); setTimeout(() => { if (this.cbs.has(id)) { this.cbs.delete(id); rej(new Error("timeout " + m)); } }, 15000); });
+  }
+  wait(m) { return new Promise((res) => { const l = this.once.get(m) || []; l.push(res); this.once.set(m, l); }); }
+}
+
+const ms = (t) => new Promise(r => setTimeout(r, t));
+
+async function getPage() {
+  const targets = await (await fetch(CDP + "/json/list")).json();
+  const page = targets.find(t => t.type === "page" && t.url === BASE + "/") || targets.find(t => t.type === "page") || targets[0];
+  const sock = await wsConnect(page.webSocketDebuggerUrl);
+  return new Cdp(sock);
+}

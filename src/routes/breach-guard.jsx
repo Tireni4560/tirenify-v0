@@ -1,17 +1,44 @@
 // Breach Guard — the front door. Runs the check through POST /api/breach-check
 // (our server calls XposedOrNot). The loading sequence mirrors the live site
 // exactly (same messages, same 2×2.5s rotation + 2.5s floor).
+// After a check the RESULT SUMMARY + SECURITY SCORE + "Do this first" render
+// together on this page (beta feedback); the email form collapses to a single
+// "Check another email" row. The full result is held in the in-memory session
+// store (lib/check-session.js) so it survives in-app navigation; only the
+// existing masked summary is ever written to device storage.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader, Chip, LetterAvatar } from "../components/ui.jsx";
+import { ScoreCard } from "../components/score-card.jsx";
+import { DoThisFirst } from "../components/do-this-first.jsx";
+import { ExploreTools } from "../components/explore-tools.jsx";
 import { EmailOptIn } from "../components/email-optin.jsx";
 import { checkBreach } from "../lib/breach-api.js";
 import { pickLoadingSequence, wait, isValidEmail } from "../lib/loading-messages.js";
 import { classifyDataType, SEVERITY_RANK } from "../lib/severity.js";
 import { scoreBreachResult } from "../lib/risk.js";
-import { saveBreachSummary, clearAllSafeyardData } from "../lib/device-storage.js";
+import {
+  saveBreachSummary,
+  clearAllSafeyardData,
+  getBreachHistory,
+  useSafeyardDataVersion,
+} from "../lib/device-storage.js";
+import {
+  useCheckSession,
+  setCheckSession,
+  clearCheckSession,
+  computeSecurityScore,
+} from "../lib/check-session.js";
+import { HabitsChecklist } from "../components/habits-checklist.jsx";
+import {
+  useHabits,
+  doneHabitIndexes,
+  HABIT_2FA_INDEX,
+} from "../lib/habits-store.js";
+import { getDoThisFirst } from "../lib/next-steps.js";
+import { selectRelatedTools } from "../content/tools.js";
 import { DATA_SOURCE } from "../config/brand.js";
 
-const PAGE_SIZE = 20;
+const INITIAL_VISIBLE = 3; // top few entries, then "Show all" (beta feedback)
 
 const RISK_TONE = {
   Critical: "text-destructive",
@@ -223,8 +250,9 @@ function BreachCard({ breach }) {
   );
 }
 
-/** Combined prioritized action checklist. Local checkboxes only. */
-function ActionPlan({ dataTypes, breaches }) {
+/** Combined prioritized action checklist. The 2FA row is habit-driven (single
+ *  source of truth via `habit2faDone`); all other rows stay page-local. */
+function ActionPlan({ dataTypes, breaches, habit2faDone }) {
   const [done, setDone] = useState({});
   const hasPassword = dataTypes.some((t) => /password/i.test(t.name));
   const hasBank = dataTypes.some((t) => /bank|card|financial/i.test(t.name));
@@ -236,7 +264,14 @@ function ActionPlan({ dataTypes, breaches }) {
       ? { id: "pw", text: "Change passwords on every account where you reused the exposed one." }
       : { id: "pw", text: "Make sure every account uses its own strong, unique password." },
   );
-  items.push({ id: "2fa", text: "Turn on two-factor authentication, starting with your email." });
+  // Same task as the shared "two-factor authentication" habit: its done state
+  // comes from the habit store, never from a second flag. A completed habit
+  // renders ticked here instead of pending (no second competing checklist).
+  items.push({
+    id: "2fa",
+    text: "Turn on two-factor authentication, starting with your email.",
+    habitIndex: HABIT_2FA_INDEX,
+  });
   if (hasBank) items.push({ id: "bank", text: "Call your bank and review recent statements." });
   if (hasId) items.push({ id: "id", text: "Watch for misuse of your ID number and report anything odd." });
   if (hasPhone) {
@@ -253,23 +288,43 @@ function ActionPlan({ dataTypes, breaches }) {
     <div className="surface p-5">
       <p className="font-semibold">Your action plan</p>
       <ul className="mt-3 space-y-2">
-        {items.map((it) => (
-          <li key={it.id} className="flex items-start gap-3 text-sm">
-            <input
-              id={`plan-${it.id}`}
-              type="checkbox"
-              checked={!!done[it.id]}
-              onChange={(e) => setDone((d) => ({ ...d, [it.id]: e.target.checked }))}
-              className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
-            />
-            <label
-              htmlFor={`plan-${it.id}`}
-              className={done[it.id] ? "text-muted-foreground line-through" : ""}
-            >
-              {it.text}
-            </label>
-          </li>
-        ))}
+        {items.map((it) => {
+          const isHabitRow = typeof it.habitIndex === "number";
+          const isDone = isHabitRow ? !!habit2faDone : !!done[it.id];
+          const habitId = `plan-${it.id}`;
+          if (isHabitRow) {
+            return (
+              <li key={it.id} className="flex items-start gap-3 text-sm">
+                <input
+                  id={habitId}
+                  type="checkbox"
+                  checked={isDone}
+                  readOnly
+                  aria-checked={isDone}
+                  className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
+                />
+                <label htmlFor={habitId} className={isDone ? "text-muted-foreground line-through" : ""}>
+                  {it.text}
+                  {isDone ? " (done in Safety habits)" : ""}
+                </label>
+              </li>
+            );
+          }
+          return (
+            <li key={it.id} className="flex items-start gap-3 text-sm">
+              <input
+                id={habitId}
+                type="checkbox"
+                checked={isDone}
+                onChange={(e) => setDone((d) => ({ ...d, [it.id]: e.target.checked }))}
+                className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
+              />
+              <label htmlFor={habitId} className={isDone ? "text-muted-foreground line-through" : ""}>
+                {it.text}
+              </label>
+            </li>
+          );
+        })}
       </ul>
       <p className="mt-3 text-xs text-muted-foreground">
         These checkboxes are kept only in this page. Nothing is uploaded.
@@ -280,19 +335,47 @@ function ActionPlan({ dataTypes, breaches }) {
 
 
 export default function BreachGuard() {
+  const session = useCheckSession();
+  const dataVersion = useSafeyardDataVersion();
   const [email, setEmail] = useState("");
-  const [phase, setPhase] = useState("idle"); // idle | loading | done | error
+  const [phase, setPhase] = useState(session?.result ? "done" : "idle"); // idle | loading | done | error
   const [loadingMsg, setLoadingMsg] = useState("");
   const [error, setError] = useState(null); // {message, kind}
-  const [result, setResult] = useState(null);
-  const [checkedEmail, setCheckedEmail] = useState("");
+  // Hydrate from the in-memory session so results survive in-app navigation.
+  const [result, setResult] = useState(() => session?.result || null);
+  const [checkedEmail, setCheckedEmail] = useState(""); // raw email: page-local only, never stored
   const [sort, setSort] = useState("newest");
   const [typeFilter, setTypeFilter] = useState("");
-  const [visible, setVisible] = useState(PAGE_SIZE);
+  const [visible, setVisible] = useState(INITIAL_VISIBLE);
   const [showExplain, setShowExplain] = useState(false);
+  const [formOpen, setFormOpen] = useState(!session?.result); // collapsed once results show
   const loadingTimer = useRef(null);
+  const resultsHeadingRef = useRef(null);
+  const emailInputRef = useRef(null);
 
   useEffect(() => () => clearInterval(loadingTimer.current), []);
+
+  // Re-sync when the session changes underneath us (new check / clear data).
+  useEffect(() => {
+    if (session?.result) {
+      setResult(session.result);
+      setPhase("done");
+      setFormOpen(false);
+    }
+  }, [session]);
+
+  // After a FRESH check completes: focus the results heading and scroll the
+  // results into view (instant scroll — respects reduced motion). The
+  // aria-live region on the results container announces the outcome.
+  const wasDone = useRef(false);
+  useEffect(() => {
+    if (phase === "done" && result && !wasDone.current) {
+      wasDone.current = true;
+      resultsHeadingRef.current?.focus();
+      resultsHeadingRef.current?.scrollIntoView({ block: "start" });
+    }
+    if (phase !== "done") wasDone.current = false;
+  }, [phase, result]);
 
   const risk = useMemo(() => (result ? scoreBreachResult(result) : null), [result]);
   const dataTypes = useMemo(() => (result ? aggregateDataTypes(result.breaches) : []), [result]);
@@ -301,6 +384,83 @@ export default function BreachGuard() {
     () => (result ? firstAndLatest(result.breaches) : { first: null, latest: null }),
     [result],
   );
+
+  // Shared habits (ONE source of truth — same ticks, count and score as the
+  // Dashboard; ticks flow into the score immediately, no reload).
+  const {
+    habits: habitsState,
+    done: habitsDone,
+    total: habitsTotal,
+    toggle: toggleHabit,
+    habitsScore,
+  } = useHabits();
+  const doneHabitIdx = useMemo(() => doneHabitIndexes(habitsState), [habitsState]);
+
+  // Score + next steps + related tools — the SAME shared helpers the Dashboard
+  // uses, so the number and the advice can never drift between pages.
+  const sharedScore = useMemo(
+    () => computeSecurityScore({ habitsScore }),
+    [session, dataVersion, habitsScore],
+  );
+  const exposedTypeNames = useMemo(
+    () => (result ? result.breaches.flatMap((b) => b.dataTypes || []) : []),
+    [result],
+  );
+  const doThisFirst = useMemo(
+    () =>
+      result
+        ? getDoThisFirst({
+            types: exposedTypeNames,
+            count: result.breaches.length,
+            doneHabits: doneHabitIdx,
+          })
+        : [],
+    [result, exposedTypeNames, doneHabitIdx],
+  );
+  const relatedTools = useMemo(
+    () => selectRelatedTools({ types: exposedTypeNames, limit: 3 }),
+    [exposedTypeNames],
+  );
+
+  // "Come back after a reload" state: no in-memory session, but a masked
+  // summary row exists in storage — show status + score + next steps above
+  // the (full) email form, with the "run a new check" note.
+  const lastSummary = useMemo(
+    () => (session?.result ? null : getBreachHistory()[0] || null),
+    [session, dataVersion],
+  );
+  const summaryDoThisFirst = useMemo(
+    () =>
+      lastSummary
+        ? getDoThisFirst({
+            types: lastSummary.types || [],
+            count: lastSummary.count,
+            doneHabits: doneHabitIdx,
+          })
+        : [],
+    [lastSummary, doneHabitIdx],
+  );
+
+  /** Live-region text for a habit tick: "... Safety habits N of 4. Score S." */
+  const habitsScoreText = useMemo(
+    () =>
+      (nextDone) => {
+        const s = computeSecurityScore({
+          habitsScore: (nextDone / habitsTotal) * 100,
+        });
+        return `Score ${s.score}.`;
+      },
+    [session, dataVersion, habitsTotal],
+  );
+
+  // The list shows the top few entries; "Show all" reveals the rest. Printing
+  // always includes everything (beforeprint expands the list).
+  useEffect(() => {
+    if (phase !== "done") return undefined;
+    const expand = () => setVisible(Number.MAX_SAFE_INTEGER);
+    window.addEventListener("beforeprint", expand);
+    return () => window.removeEventListener("beforeprint", expand);
+  }, [phase]);
 
   const sorted = useMemo(() => {
     if (!result) return [];
@@ -329,10 +489,12 @@ export default function BreachGuard() {
       return;
     }
 
+    // A new check replaces (clears) the previous session and its results.
+    clearCheckSession();
     setPhase("loading");
     setError(null);
     setResult(null);
-    setVisible(PAGE_SIZE);
+    setVisible(INITIAL_VISIBLE);
     setSort("newest");
     setTypeFilter("");
 
@@ -359,6 +521,7 @@ export default function BreachGuard() {
 
     setResult(res.result);
     setCheckedEmail(entered.trim());
+    setFormOpen(false); // collapse the form so the results stay near the top
     setPhase("done");
     const dataTypesFlat = res.result.breaches.flatMap((b) => b.dataTypes || []);
     saveBreachSummary({
@@ -368,13 +531,39 @@ export default function BreachGuard() {
       riskLevel: scoreBreachResult(res.result).level,
       checkedAt: res.result.checkedAt,
     });
+    // In-memory only — survives in-app navigation, never written to web storage.
+    setCheckSession({ result: res.result, email: entered.trim(), checkedAt: res.result.checkedAt });
+  }
+
+  /** "Check another email" — clear results + session, re-open the full form. */
+  function checkAnotherEmail() {
+    clearCheckSession();
+    setResult(null);
+    setError(null);
+    setCheckedEmail("");
+    setEmail("");
+    setPhase("idle");
+    setFormOpen(true);
+    requestAnimationFrame(() => emailInputRef.current?.focus());
+  }
+
+  /** "Clear my data" — storage AND the in-memory session, back to first visit. */
+  function clearMyData() {
+    clearCheckSession();
+    clearAllSafeyardData();
+    setResult(null);
+    setError(null);
+    setCheckedEmail("");
+    setEmail("");
+    setPhase("idle");
+    setFormOpen(true);
   }
 
   function copySummary() {
     if (!result) return;
     const lines = [];
     lines.push(
-      `Breach summary for ${checkedEmail} (checked ${new Date(result.checkedAt).toLocaleString()})`,
+      `Breach summary for ${checkedEmail || session?.masked || "your email"} (checked ${new Date(result.checkedAt).toLocaleString()})`,
     );
     lines.push(`Risk level: ${risk.level} (score ${risk.score}/100)`);
     lines.push(`Found in ${result.breaches.length} breach${result.breaches.length === 1 ? "" : "es"}.`);
@@ -406,35 +595,87 @@ export default function BreachGuard() {
         description="Enter your email to see which known breaches included it, when they happened, and what data was exposed. Nothing is stored, and we never log your email."
       />
 
-      <form onSubmit={submit} className="surface mx-auto max-w-3xl p-5 sm:p-6" noValidate>
-        <label htmlFor="breachEmail" className="block text-sm font-medium">
-          Email address
-        </label>
-        <div className="mt-2 flex flex-col gap-3 sm:flex-row">
-          <input
-            id="breachEmail"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            maxLength={255}
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={phase === "loading"}
-            className="h-12 w-full rounded-lg border border-input bg-background/60 px-4 outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
-          />
+      {/* Collapsed one-line form once results are showing */}
+      {phase === "done" && result && !formOpen ? (
+        <div className="surface mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 p-4">
+          <p className="min-w-0 truncate text-sm text-muted-foreground">
+            Checked {session?.masked || "your email"}
+          </p>
           <button
-            type="submit"
-            disabled={phase === "loading"}
-            className="h-12 shrink-0 rounded-lg bg-brand px-6 text-sm font-semibold text-primary-foreground disabled:opacity-70"
+            type="button"
+            onClick={checkAnotherEmail}
+            className="min-h-[44px] shrink-0 rounded-lg border border-input px-4 text-sm font-medium hover:bg-secondary"
           >
-            {phase === "loading" ? "Checking…" : "Check for breaches"}
+            Check another email
           </button>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Free, no signup, nothing stored. Your email is only used to run the check.
-        </p>
-      </form>
+      ) : (
+        <form onSubmit={submit} className="surface mx-auto max-w-3xl p-5 sm:p-6" noValidate>
+          <label htmlFor="breachEmail" className="block text-sm font-medium">
+            Email address
+          </label>
+          <div className="mt-2 flex flex-col gap-3 sm:flex-row">
+            <input
+              id="breachEmail"
+              ref={emailInputRef}
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              maxLength={255}
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={phase === "loading"}
+              className="h-12 w-full rounded-lg border border-input bg-background/60 px-4 outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+            />
+            <button
+              type="submit"
+              disabled={phase === "loading"}
+              className="h-12 shrink-0 rounded-lg bg-brand px-6 text-sm font-semibold text-primary-foreground disabled:opacity-70"
+            >
+              {phase === "loading" ? "Checking…" : "Check for breaches"}
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Free, no signup, nothing stored. Your email is only used to run the check.
+          </p>
+        </form>
+      )}
+
+      {/* Return visit after a reload: masked summary + score + next steps above
+          the form, with the "run a new check" note. */}
+      {!session?.result && lastSummary && phase !== "done" && (
+        <div className="surface mx-auto mt-6 max-w-3xl p-6" aria-label="Your last check">
+          <h2 className="text-base font-semibold">Your last check</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {lastSummary.masked} · {lastSummary.count} breach
+            {lastSummary.count === 1 ? "" : "es"} ·{" "}
+            {new Date(lastSummary.at).toLocaleDateString()}
+            {lastSummary.risk ? ` · Risk: ${lastSummary.risk}` : ""}
+          </p>
+          <div className="mt-4">
+            <ScoreCard score={sharedScore} compact habitsLink={{ to: "/", label: "open the checklist" }} />
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Run a new check to see the full list of breaches.
+          </p>
+        </div>
+      )}
+      {!session?.result && lastSummary && phase !== "done" && summaryDoThisFirst.length > 0 && (
+        <div className="mx-auto mt-4 max-w-3xl">
+          <DoThisFirst actions={summaryDoThisFirst} headingId="do-this-first-summary" />
+        </div>
+      )}
+      {/* Habits before a check: same checklist, directly below the email form. */}
+      {phase !== "loading" && (
+        <div className="mx-auto mt-4 max-w-3xl">
+          <HabitsChecklist
+            habits={habitsState}
+            onToggle={toggleHabit}
+            getScoreText={(nextDone) => habitsScoreText(nextDone)}
+          />
+        </div>
+      )}
 
       {/* Loading — skeleton using the preserved loading messages */}
       {phase === "loading" && (
@@ -487,7 +728,11 @@ export default function BreachGuard() {
         <div className="mt-8" aria-live="polite">
           <div className="surface mx-auto max-w-3xl p-6">
             <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <h2 className="text-2xl font-semibold">
+              <h2
+                ref={resultsHeadingRef}
+                tabIndex={-1}
+                className="text-2xl font-semibold outline-none"
+              >
                 {result.breaches.length === 0
                   ? "Good news: no breaches found"
                   : `Found in ${result.breaches.length} breach${result.breaches.length === 1 ? "" : "es"}`}
@@ -498,6 +743,11 @@ export default function BreachGuard() {
                   <span className="ml-1 text-sm text-muted-foreground">({risk.score}/100)</span>
                 </p>
               )}
+            </div>
+
+            {/* Score directly under the summary — result + score together */}
+            <div className="mt-4">
+              <ScoreCard score={sharedScore} compact habitsLink={{ to: "/", label: "open the checklist" }} />
             </div>
 
             {result.breaches.length === 0 ? (
@@ -575,6 +825,18 @@ export default function BreachGuard() {
             )}
           </div>
 
+          {/* Next steps — directly after the result+score summary.
+              "Do this first" action rows first, then the shared habits checklist
+              (same ticks as the Dashboard; nothing hidden behind an accordion). */}
+          <div className="mx-auto mt-4 max-w-3xl space-y-4">
+            <DoThisFirst actions={doThisFirst} headingId="do-this-first" />
+            <HabitsChecklist
+              habits={habitsState}
+              onToggle={toggleHabit}
+              getScoreText={(nextDone) => habitsScoreText(nextDone)}
+            />
+          </div>
+
           {result.breaches.length > 0 && (
             <>
               <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between no-print">
@@ -639,18 +901,32 @@ export default function BreachGuard() {
               {visible < sorted.length && (
                 <button
                   type="button"
-                  onClick={() => setVisible((v) => v + PAGE_SIZE)}
-                  className="mt-4 rounded-lg border border-input px-5 py-2 text-sm font-medium hover:bg-secondary no-print"
+                  onClick={() => setVisible(Number.MAX_SAFE_INTEGER)}
+                  className="mt-4 min-h-[44px] rounded-lg border border-input px-5 py-2 text-sm font-medium hover:bg-secondary no-print"
                 >
-                  Show more ({sorted.length - visible} more)
+                  Show all ({sorted.length} breach{sorted.length === 1 ? "" : "es"})
                 </button>
               )}
             </>
           )}
 
+          {/* Explore more tools — result-relevant, below the next steps */}
+          <div className="mx-auto mt-8 max-w-3xl">
+            <ExploreTools
+              items={relatedTools}
+              heading="Explore more tools"
+              allToolsLabel="See all tools"
+              limitMobile={3}
+            />
+          </div>
+
           {result.breaches.length > 0 && (
             <div className="mt-8">
-              <ActionPlan dataTypes={dataTypes} breaches={result.breaches} />
+              <ActionPlan
+                dataTypes={dataTypes}
+                breaches={result.breaches}
+                habit2faDone={doneHabitIdx.includes(HABIT_2FA_INDEX)}
+              />
             </div>
           )}
 
@@ -661,7 +937,7 @@ export default function BreachGuard() {
           <div className="mt-4 no-print">
             <button
               type="button"
-              onClick={() => clearAllSafeyardData()}
+              onClick={clearMyData}
               className="text-xs text-muted-foreground underline hover:text-foreground"
             >
               Clear my data stored on this device

@@ -1,0 +1,40 @@
+// TEMP CDP verification (delete after). Drives headless Chrome via raw WS.
+const net = require("net");
+
+const BASE = "http://localhost:4173";
+const CDP = "http://localhost:9222";
+
+function wsConnect(url) {
+  return new Promise((resolve, reject) => {
+    const m = url.match(/^ws:\/\/([^\/]+)(\/.*)$/);
+    const [host, port] = m[1].split(":");
+    const sock = net.connect(Number(port), host, () => {
+      const key = Buffer.from(require("crypto").randomUUID().replace(/-/g, "").slice(0, 24)).toString("base64");
+      sock.write(`GET ${m[2]} HTTP/1.1\r\nHost: ${m[1]}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+    });
+    let buf = "", done = false, resolved = false;
+    sock.on("data", (c) => {
+      buf += c.toString("latin1");
+      if (!done) { const i = buf.indexOf("\r\n\r\n"); if (i === -1) return; done = true; buf = buf.slice(i + 4); if (!resolved) { resolved = true; resolve(sock); return; } }
+      while (buf.length >= 2) {
+        const b1 = buf.charCodeAt(0), b2 = buf.charCodeAt(1);
+        const op = b1 & 0x0f, masked = b2 & 0x80, len = b2 & 0x7f;
+        let off = 2, pl = len;
+        if (pl === 126) { pl = buf.charCodeAt(2) * 256 + buf.charCodeAt(3); off += 2; }
+        else if (pl === 127) break;
+        if (masked) off += 4;
+        if (buf.length < off + pl) break;
+        if (op === 0x8) { sock.destroy(); return; }
+        if (op === 0x1) {
+          let p = buf.slice(off, off + pl);
+          if (masked) { const mk = buf.slice(off - 4, off); p = p.split("").map((ch, i) => String.fromCharCode(ch.charCodeAt(0) ^ mk.charCodeAt(i % 4))).join(""); }
+          buf = buf.slice(off + pl);
+          try { sock._q.push(JSON.parse(p)); } catch {}
+        } else { buf = buf.slice(off + pl); }
+      }
+    });
+    sock._q = [];
+    sock.on("error", (e) => { if (!resolved) reject(e); });
+    setTimeout(() => { if (!resolved) reject(new Error("ws timeout")); }, 12000);
+  });
+}

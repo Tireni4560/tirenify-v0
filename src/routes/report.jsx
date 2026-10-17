@@ -6,22 +6,14 @@ import { Link } from "../lib/router.jsx";
 import { PageHeader } from "../components/ui.jsx";
 import { getBreachHistory } from "../lib/device-storage.js";
 import { getItem } from "../lib/storage.js";
-import { scoreDashboard } from "../lib/score.js";
+import { computeSecurityScore } from "../lib/check-session.js";
 import { HABITS } from "../content/habits.js";
-
-function loadHabits() {
-  try {
-    const raw = localStorage.getItem("safeyard:habits");
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
+import { useHabits } from "../lib/habits-store.js";
 
 export default function Report() {
   const history = getBreachHistory();
   const latest = history[0] || null;
-  const habits = loadHabits();
+  const { habits, habitsScore } = useHabits();
   const habitsDone = HABITS.filter((_, i) => habits[i]).length;
 
   const checklistAll = getItem("checklists") || {};
@@ -30,11 +22,10 @@ export default function Report() {
 
   const hasData = history.length > 0 || habitsDone > 0 || leakDone > 0;
 
-  const score = scoreDashboard({
-    breachesFound: latest ? latest.count : null,
-    habitsScore: (Object.values(habits).filter(Boolean).length / HABITS.length) * 100,
-    checkupScore: null,
-  });
+  // Same shared scoring path as the Dashboard and Breach Guard — the number
+  // can never drift between pages (formula in lib/score.js untouched).
+  // habitsScore comes from the shared store (null before hydration = Partial).
+  const score = computeSecurityScore({ history, habitsScore, checkupScore: null });
 
   if (!hasData) {
     return (
