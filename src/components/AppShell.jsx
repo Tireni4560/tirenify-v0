@@ -5,7 +5,8 @@
 // All navigation is client-side (router.jsx).
 import { useEffect, useRef, useState } from "react";
 import { Link, useRoute } from "../lib/router.jsx";
-import { PRODUCT_NAME, TAGLINE, COMPANY } from "../config/brand.js";
+import { PRODUCT_NAME, TAGLINE } from "../config/brand.js";
+import TirenifyLogo from "./tirenify-logo.jsx";
 import { buildSidebarNav, isNavActive } from "../config/nav.js";
 
 const FOOTER_LINKS = [
@@ -216,7 +217,9 @@ export function AppShell({ children }) {
       <footer className="border-t border-sidebar-border px-4 py-6 sm:px-6 no-print lg:ml-64">
         <div className="mx-auto flex max-w-4xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-muted-foreground">
-            {PRODUCT_NAME} by {COMPANY} — {TAGLINE}
+            {PRODUCT_NAME} <span className="text-xs">by</span>{" "}
+            <TirenifyLogo variant="horizontal" height={22} className="inline shrink-0" alt="Tirenify" />{" "}
+            — {TAGLINE}
           </p>
           <nav className="flex flex-wrap gap-x-4 gap-y-1" aria-label="Footer">
             {FOOTER_LINKS.map((l) =>

@@ -3,7 +3,8 @@
 import { useRoute, Link } from "../lib/router.jsx";
 import { PageHeader } from "../components/ui.jsx";
 import { STATIC_CONTENT } from "../lib/static-content.js";
-import { PRODUCT_NAME, COMPANY } from "../config/brand.js";
+import { PRODUCT_NAME } from "../config/brand.js";
+import TirenifyLogo from "../components/tirenify-logo.jsx";
 
 export default function StaticPage({ route }) {
   const { path } = useRoute();
@@ -27,7 +28,8 @@ export default function StaticPage({ route }) {
         </Link>
       </div>
       <p className="mt-8 text-xs text-muted-foreground">
-        {PRODUCT_NAME} by {COMPANY}.
+        {PRODUCT_NAME} <span className="text-xs">by</span>{" "}
+        <TirenifyLogo variant="horizontal" height={22} className="inline shrink-0" alt="Tirenify" />.
       </p>
     </div>
   );

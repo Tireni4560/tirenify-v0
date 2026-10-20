@@ -8,7 +8,7 @@
 // - The worker file itself is served with Cache-Control: no-store (see
 //   vercel.json headers), so it is never long-cached.
 
-const CACHE = "safeyard-v1";
+const CACHE = "safeyard-v2";
 
 // Files that become the offline app shell. These literal names match the
 // committed, hashed build output (public/). Regenerate if the build output
@@ -19,13 +19,18 @@ const APP_SHELL = [
   "/manifest.webmanifest",
   "/robots.txt",
   "/sitemap.xml",
-  "/favicon.png",
+  "/favicon.svg",
+  "/favicon.ico",
+  "/brand/favicon-16.png",
+  "/brand/favicon-32.png",
+  "/brand/favicon-48.png",
+  "/apple-touch-icon.png",
   "/og-preview.png",
   "/fonts/sora.woff2",
   "/fonts/manrope.woff2",
-  "/assets/index-Dt9yppwb.js",
+  "/assets/index-6UEnuOad.js",
   "/assets/vendor-react-CiBELqhN.js",
-  "/assets/index-DvM5_sRy.css",
+  "/assets/index-D_kqlg1u.css",
 ];
 
 self.addEventListener("install", (event) => {

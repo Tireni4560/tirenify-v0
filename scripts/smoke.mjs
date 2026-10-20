@@ -131,7 +131,11 @@ const STATIC_FILES = [
   { path: "/sitemap.xml", types: ["xml"] },
   { path: "/manifest.webmanifest", types: ["json"] },
   { path: "/sw.js", types: ["javascript"] },
-  { path: "/favicon.png", types: ["png"] },
+  { path: "/favicon.svg", types: ["svg"] },
+  { path: "/brand/favicon-16.png", types: ["png"] },
+  { path: "/brand/favicon-32.png", types: ["png"] },
+  { path: "/brand/favicon-48.png", types: ["png"] },
+  { path: "/apple-touch-icon.png", types: ["png"] },
   { path: "/og-preview.png", types: ["png"] },
 ];
 
