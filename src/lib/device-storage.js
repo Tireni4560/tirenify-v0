@@ -26,14 +26,28 @@ function read() {
   return Array.isArray(list) ? list : [];
 }
 
-/** Save a masked summary row for a check. Keeps the latest 10. */
-export function saveBreachSummary({ email, breachCount, dataTypes, riskLevel, checkedAt }) {
+/**
+ * Save a masked summary row for a check. Keeps the latest 10.
+ *
+ * `pasteCount` is optional and ADDITIVE: older rows simply do not have it and
+ * are read as "unknown" (never as "zero exposures"). Only the count is kept —
+ * no paste titles, sources or text.
+ */
+export function saveBreachSummary({ email, breachCount, dataTypes, riskLevel, checkedAt, pasteCount = null }) {
   const list = read();
+  // `null`/`undefined`/`""` mean "the API did not report a counter" — they are
+  // NOT zero exposures, so the key is left off entirely (older rows stay
+  // byte-identical).
+  const rawPasteCount = Number(pasteCount);
+  const hasPasteCount =
+    pasteCount !== null && pasteCount !== undefined && pasteCount !== "" &&
+    Number.isFinite(rawPasteCount) && rawPasteCount >= 0;
   const row = {
     masked: maskEmail(email),
     count: breachCount,
     types: [...new Set(dataTypes)].slice(0, 20),
     risk: riskLevel,
+    ...(hasPasteCount ? { pasteCount: rawPasteCount } : {}),
     at: checkedAt || new Date().toISOString(),
   };
   const next = [row, ...list.filter((r) => !(r.masked === row.masked && r.count === row.count))].slice(0, 10);

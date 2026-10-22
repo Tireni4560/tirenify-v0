@@ -119,6 +119,9 @@ export default function Report() {
                 <li key={i} className="flex justify-between gap-3 border-b border-input pb-2 last:border-0">
                   <span>
                     {r.masked} — {r.count} breach{r.count === 1 ? "" : "es"}
+                    {Number(r.pasteCount) > 0
+                      ? ` · ${r.pasteCount} public paste${r.pasteCount === 1 ? "" : "s"} (not a breach)`
+                      : ""}
                   </span>
                   <span className="text-muted-foreground">{new Date(r.at).toLocaleDateString()}</span>
                 </li>
@@ -165,6 +168,12 @@ export default function Report() {
           <h2 className="text-base font-semibold">Recommended next steps</h2>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {!latest && <li>Run a breach check to see if your email is exposed.</li>}
+            {Number(latest?.pasteCount) > 0 && (
+              <li>
+                Remove any public paste that exposed this email, and change every password that
+                appeared in it.
+              </li>
+            )}
             {habitsDone < HABITS.length && <li>Finish the safety habits on the dashboard.</li>}
             <li>Give every important account a unique password.</li>
             <li>Turn on two-factor authentication, starting with your email.</li>

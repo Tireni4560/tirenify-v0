@@ -274,3 +274,61 @@ mount-then-read via a store with `getServerSnapshot`).
 - No separate habits heading hierarchy.
 - No `withStaticClass` wrapper on ScoreCard — plain named export is sufficient.
 
+---
+
+## 6. FOLLOW-UP — paste-only results are a distinct exposure (beta feedback)
+
+### The bug
+`countPastes()` read the API's paste counter with a truthiness check, so a
+`null` counter (the API simply did not report one) became `0` — the UI then
+said "0 exposed pastes" and the risk score claimed no paste exposure, even
+when the API had returned a non-empty paste list.
+
+### The rule now enforced everywhere
+**The API's paste counter is authoritative, but only when it is a real number.**
+`null`, `undefined`, `""`, non-numeric and non-finite values mean *"the API did
+not report a counter"* — never *"zero exposures"*. In that case we fall back to
+the paste list the API DID return. An explicit `0` stays `0`.
+
+One helper owns this: `countPastes()` in `src/lib/result-copy.js`. Every surface
+(Homepage, Breach Guard, Report, risk score, next steps, "Copy summary") calls
+it, so they can never drift apart.
+
+### What a paste-only result now says
+A paste is **not** a breach, so it gets its own third state (`tone: "paste"`)
+alongside "hit" and "clear":
+
+| Surface | Paste-only result |
+|---|---|
+| Status chip | `Found in pastes` (warning tone, not the green "no breaches" tone) |
+| Headline | `Found in N public pastes` — never "Found in N breaches" |
+| Breach Guard | Extra "What was exposed publicly" card: the text is public and may be indexed even after removal |
+| Risk score | Paste factor from the API counter (`N public pastes`, 6 pts each) |
+| Risk badge | Shown for a paste-only result too (previously hidden because there were no breaches) |
+| "Do this first" | Paste remediation: remove the paste → change any password in it → 2FA. Not the "nothing found" advice |
+| Homepage | Same chip/headline/subhead + qualifier, from the same copy source |
+| Report | Breach-check rows show `N public pastes (not a breach)`; next steps add the paste cleanup line |
+| "Copy summary" | States breaches and pastes separately, and says a paste is not a breach |
+
+### Storage
+`saveBreachSummary()` now stores `pasteCount` in the masked summary row
+(**additive**: the key is omitted entirely when the API reported no counter, so
+older rows stay byte-identical and read as "unknown"). Only the count is kept —
+never paste titles, sources or text.
+
+### Tests
+- `tests/result-copy.test.js` — null/empty/non-numeric/non-finite counters fall
+  back to the paste list; an explicit `0` stays `0`; breach + paste keeps the
+  breach headline.
+- `tests/risk.test.js` — paste-only scoring from the counter, the list fallback,
+  and no "zero exposure" for any invalid counter.
+- `tests/next-steps.test.js` — paste-only remediation (and its 2FA row hidden by
+  the ticked habit), invalid counters treated as "no paste exposure", and
+  breaches + pastes keeping the breach remediation.
+- `tests/device-storage.test.js` (new) — the counter is persisted, an explicit
+  zero is persisted, a missing/malformed counter is omitted.
+- `tests/parse.test.js` — a paste-only response (API counter, no paste details)
+  is normalized as `found: true`; a missing or zero counter stays not-found.
+- `npx vitest run` → **201 passed (22 test files), 0 failed**.
+
+

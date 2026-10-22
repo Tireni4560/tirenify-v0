@@ -17,6 +17,12 @@ import { pickLoadingSequence, wait, isValidEmail } from "../lib/loading-messages
 import { classifyDataType, SEVERITY_RANK } from "../lib/severity.js";
 import { scoreBreachResult } from "../lib/risk.js";
 import {
+  getResultStatus,
+  getResultFacts,
+  getTopExposure,
+  countPastes,
+} from "../lib/result-copy.js";
+import {
   saveBreachSummary,
   clearAllSafeyardData,
   getBreachHistory,
@@ -113,13 +119,6 @@ function aggregateDataTypes(breaches) {
   return [...map.values()].sort(
     (a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || b.count - a.count,
   );
-}
-
-/** First and latest breach dates as given (a year stays a year). */
-function firstAndLatest(breaches) {
-  const dated = breaches.filter((b) => b.date).sort((a, b) => a.date.localeCompare(b.date));
-  if (!dated.length) return { first: null, latest: null };
-  return { first: dated[0].date, latest: dated[dated.length - 1].date };
 }
 
 /** Truncated description with "read more". */
@@ -380,9 +379,54 @@ export default function BreachGuard() {
   const risk = useMemo(() => (result ? scoreBreachResult(result) : null), [result]);
   const dataTypes = useMemo(() => (result ? aggregateDataTypes(result.breaches) : []), [result]);
   const typeOptions = useMemo(() => dataTypes.map((t) => t.name), [dataTypes]);
-  const dates = useMemo(
-    () => (result ? firstAndLatest(result.breaches) : { first: null, latest: null }),
-    [result],
+  // Result copy comes from ONE source (lib/result-copy.js) so the homepage and
+  // Breach Guard can never drift apart. Facts are only shown when the API
+  // actually confirmed them.
+  const status = useMemo(() => getResultStatus(result), [result]);
+  const facts = useMemo(() => (result ? getResultFacts(result) : []), [result]);
+  // The API's paste counter (falling back to the paste list it returned).
+  // A paste exposure is a different kind of exposure from a breach.
+  const pasteCount = useMemo(() => (result ? countPastes(result) : 0), [result]);
+
+  // The "how we calculated this" breakdown — shown for a breach hit AND for a
+  // paste-only result, so a risk score never appears without its reasons.
+  // `risk` is null before a check completes, so every access is guarded.
+  const riskFactors = risk?.factors ?? [];
+  const riskExplain = (
+    <div className="mt-4">
+      <button
+        type="button"
+        onClick={() => setShowExplain((v) => !v)}
+        className="text-sm font-medium text-primary hover:underline"
+      >
+        {showExplain ? "Hide how we calculated this" : "How we calculated this"}
+      </button>
+      {showExplain && (
+        <div className="mt-2 rounded-lg border border-border bg-background/40 p-3 text-sm">
+          {riskFactors.length === 0 ? (
+            <p className="text-muted-foreground">No risk factors were detected.</p>
+          ) : (
+            <ul className="space-y-1 text-muted-foreground">
+              {riskFactors.map((f, i) => (
+                <li key={i} className="flex justify-between gap-4">
+                  <span>{f.label}</span>
+                  <span className="shrink-0 tabular-nums">+{f.points}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            We add up points for the sensitivity of the data exposed, how many breaches included it
+            and how many public pastes exposed it, then cap the total at 100. This is a rough guide,
+            not a guarantee.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+  const topExposure = useMemo(
+    () => getTopExposure(dataTypes.filter((t) => t.severity !== "unknown")),
+    [dataTypes],
   );
 
   // Shared habits (ONE source of truth — same ticks, count and score as the
@@ -412,6 +456,7 @@ export default function BreachGuard() {
         ? getDoThisFirst({
             types: exposedTypeNames,
             count: result.breaches.length,
+            pasteCount: countPastes(result),
             doneHabits: doneHabitIdx,
           })
         : [],
@@ -435,6 +480,7 @@ export default function BreachGuard() {
         ? getDoThisFirst({
             types: lastSummary.types || [],
             count: lastSummary.count,
+            pasteCount: lastSummary.pasteCount,
             doneHabits: doneHabitIdx,
           })
         : [],
@@ -530,6 +576,7 @@ export default function BreachGuard() {
       dataTypes: dataTypesFlat,
       riskLevel: scoreBreachResult(res.result).level,
       checkedAt: res.result.checkedAt,
+      pasteCount: countPastes(res.result),
     });
     // In-memory only — survives in-app navigation, never written to web storage.
     setCheckSession({ result: res.result, email: entered.trim(), checkedAt: res.result.checkedAt });
@@ -566,7 +613,16 @@ export default function BreachGuard() {
       `Breach summary for ${checkedEmail || session?.masked || "your email"} (checked ${new Date(result.checkedAt).toLocaleString()})`,
     );
     lines.push(`Risk level: ${risk.level} (score ${risk.score}/100)`);
-    lines.push(`Found in ${result.breaches.length} breach${result.breaches.length === 1 ? "" : "es"}.`);
+    if (result.breaches.length > 0) {
+      lines.push(`Found in ${result.breaches.length} breach${result.breaches.length === 1 ? "" : "es"}.`);
+    } else {
+      lines.push("Found in 0 known breaches.");
+    }
+    if (pasteCount > 0) {
+      lines.push(
+        `Found in ${pasteCount} public paste${pasteCount === 1 ? "" : "s"} (not a breach — the text is public).`,
+      );
+    }
     if (dataTypes.length) {
       lines.push("");
       lines.push("Exposed data types:");
@@ -653,6 +709,12 @@ export default function BreachGuard() {
             {new Date(lastSummary.at).toLocaleDateString()}
             {lastSummary.risk ? ` · Risk: ${lastSummary.risk}` : ""}
           </p>
+          {Number(lastSummary.pasteCount) > 0 && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              · {lastSummary.pasteCount} public paste
+              {lastSummary.pasteCount === 1 ? "" : "s"} (not a breach)
+            </p>
+          )}
           <div className="mt-4">
             <ScoreCard score={sharedScore} compact habitsLink={{ to: "/", label: "open the checklist" }} />
           </div>
@@ -664,16 +726,6 @@ export default function BreachGuard() {
       {!session?.result && lastSummary && phase !== "done" && summaryDoThisFirst.length > 0 && (
         <div className="mx-auto mt-4 max-w-3xl">
           <DoThisFirst actions={summaryDoThisFirst} headingId="do-this-first-summary" />
-        </div>
-      )}
-      {/* Habits before a check: same checklist, directly below the email form. */}
-      {phase !== "loading" && (
-        <div className="mx-auto mt-4 max-w-3xl">
-          <HabitsChecklist
-            habits={habitsState}
-            onToggle={toggleHabit}
-            getScoreText={(nextDone) => habitsScoreText(nextDone)}
-          />
         </div>
       )}
 
@@ -727,18 +779,32 @@ export default function BreachGuard() {
       {phase === "done" && result && (
         <div className="mt-8" aria-live="polite">
           <div className="surface mx-auto max-w-3xl p-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <h2
-                ref={resultsHeadingRef}
-                tabIndex={-1}
-                className="text-2xl font-semibold outline-none"
-              >
-                {result.breaches.length === 0
-                  ? "Good news: no breaches found"
-                  : `Found in ${result.breaches.length} breach${result.breaches.length === 1 ? "" : "es"}`}
-              </h2>
-              {result.breaches.length > 0 && (
-                <p className={`text-lg font-semibold ${RISK_TONE[risk.level] || ""}`}>
+            {/* Status chip + honest headline. The copy comes from
+                lib/result-copy.js, so the homepage says the same thing. */}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Chip
+                  className={
+                    status.tone === "hit"
+                      ? "bg-destructive/15 text-destructive border-destructive/30"
+                      : status.tone === "paste"
+                        ? "bg-warning/15 text-warning border-warning/30"
+                        : "bg-success/15 text-success border-success/30"
+                  }
+                >
+                  {status.chip}
+                </Chip>
+                <h2
+                  ref={resultsHeadingRef}
+                  tabIndex={-1}
+                  className="mt-2 text-2xl font-semibold outline-none"
+                >
+                  {status.headline}
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{status.subhead}</p>
+              </div>
+              {(result.breaches.length > 0 || pasteCount > 0) && (
+                <p className={`shrink-0 text-lg font-semibold ${RISK_TONE[risk.level] || ""}`}>
                   Risk: {risk.level}
                   <span className="ml-1 text-sm text-muted-foreground">({risk.score}/100)</span>
                 </p>
@@ -750,23 +816,64 @@ export default function BreachGuard() {
               <ScoreCard score={sharedScore} compact habitsLink={{ to: "/", label: "open the checklist" }} />
             </div>
 
+            {/* API-confirmed facts — only fields the API actually returned.
+                Shown for a hit AND for a paste-only result (the paste count is
+                a confirmed fact even when no breach matched). */}
+            {facts.length > 0 && (
+              <div className="mt-5">
+                <h3 className="text-sm font-semibold">What this search found</h3>
+                <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {facts.map((f) => (
+                    <div
+                      key={f.label}
+                      className="rounded-lg border border-border bg-background/40 p-3"
+                    >
+                      <dt className="text-xs text-muted-foreground">{f.label}</dt>
+                      <dd className="mt-0.5 text-sm font-medium">{f.value}</dd>
+                      {f.hint && (
+                        <p className="mt-1 text-xs text-muted-foreground">{f.hint}</p>
+                      )}
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+
             {result.breaches.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">
-                We didn't find this email in the breaches we can see. This isn't proof you were never
-                exposed — some leaks are never made public. Keep using unique passwords and two-factor
-                authentication as a habit.
-              </p>
+              /* No breach hit: qualify the result honestly and point to next
+                 steps. Nothing here claims the user is "safe". A paste-only
+                 result gets its own explanation — the exposure is public text,
+                 not a breach. */
+              <>
+                {pasteCount > 0 && (
+                  <div className="mt-4 rounded-lg border border-warning/30 bg-warning/5 p-4">
+                    <p className="text-sm font-semibold">What was exposed publicly</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {pasteCount} public paste{pasteCount === 1 ? "" : "s"} exposed this email
+                      address. A paste is not a breach, but the text is public: anyone can read it, and
+                      search engines may have indexed it even after the original post is removed.
+                    </p>
+                  </div>
+                )}
+                <div className="mt-4 rounded-lg border border-border bg-background/40 p-4">
+                  <p className="text-sm font-semibold">What this result does and does not mean</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{status.qualifier}</p>
+                </div>
+                {riskExplain}
+              </>
             ) : (
               <>
-                <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
-                  {dates.first && <span>Earliest: {dates.first}</span>}
-                  {dates.latest && <span>Most recent: {dates.latest}</span>}
-                  {result.pastes.length > 0 && (
-                    <span>
-                      Also in {result.pastes.length} paste{result.pastes.length === 1 ? "" : "s"}
-                    </span>
-                  )}
-                </div>
+                {/* "What this means" — the single most sensitive exposure, in
+                    plain language, using the severity map's own wording. */}
+                {topExposure && (
+                  <div className="mt-5 rounded-lg border border-border bg-background/40 p-4">
+                    <p className="text-sm font-semibold">What this means</p>
+                    <p className="mt-1 text-sm">
+                      <span className="font-medium">{topExposure.name}</span> was among the data
+                      exposed in these breaches. {topExposure.explain}
+                    </p>
+                  </div>
+                )}
 
                 {dataTypes.length > 0 && (
                   <div className="mt-5">
@@ -785,35 +892,7 @@ export default function BreachGuard() {
                   </div>
                 )}
 
-                <div className="mt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowExplain((v) => !v)}
-                    className="text-sm font-medium text-primary hover:underline"
-                  >
-                    {showExplain ? "Hide how we calculated this" : "How we calculated this"}
-                  </button>
-                  {showExplain && (
-                    <div className="mt-2 rounded-lg border border-border bg-background/40 p-3 text-sm">
-                      {risk.factors.length === 0 ? (
-                        <p className="text-muted-foreground">No risk factors were detected.</p>
-                      ) : (
-                        <ul className="space-y-1 text-muted-foreground">
-                          {risk.factors.map((f, i) => (
-                            <li key={i} className="flex justify-between gap-4">
-                              <span>{f.label}</span>
-                              <span className="shrink-0 tabular-nums">+{f.points}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        We add up points for the sensitivity of the data exposed and how many breaches
-                        included it, then cap the total at 100. This is a rough guide, not a guarantee.
-                      </p>
-                    </div>
-                  )}
-                </div>
+                {riskExplain}
 
                 {Object.keys(result.years || {}).length > 1 && (
                   <div className="mt-5">
@@ -821,21 +900,27 @@ export default function BreachGuard() {
                     <YearTimeline years={result.years} />
                   </div>
                 )}
+
+                {/* The API's own risk rating, when it returned one. We show it
+                    next to ours instead of silently swapping it in. */}
+                {risk.apiLabel && (
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    The breach database rates this exposure{" "}
+                    <span className="font-medium text-foreground">{risk.apiLabel}</span>. Our rating
+                    above is Safeyard&apos;s own estimate, calculated from the data exposed.
+                  </p>
+                )}
+
+                {/* Honest scope note — a hit is still only about known breaches. */}
+                <div className="mt-4 rounded-lg border border-border bg-background/40 p-4">
+                  <p className="text-sm font-semibold">What this result does and does not mean</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{status.qualifier}</p>
+                </div>
               </>
             )}
           </div>
 
-          {/* Next steps — directly after the result+score summary.
-              "Do this first" action rows first, then the shared habits checklist
-              (same ticks as the Dashboard; nothing hidden behind an accordion). */}
-          <div className="mx-auto mt-4 max-w-3xl space-y-4">
-            <DoThisFirst actions={doThisFirst} headingId="do-this-first" />
-            <HabitsChecklist
-              habits={habitsState}
-              onToggle={toggleHabit}
-              getScoreText={(nextDone) => habitsScoreText(nextDone)}
-            />
-          </div>
+
 
           {result.breaches.length > 0 && (
             <>
@@ -909,6 +994,19 @@ export default function BreachGuard() {
               )}
             </>
           )}
+
+          {/* Next steps — directly after the result+score summary.
+              "Do this first" action rows first, then the shared habits checklist
+              (same ticks as the Dashboard; nothing hidden behind an accordion). */}
+          <div className="mx-auto mt-4 max-w-3xl space-y-4">
+            <DoThisFirst actions={doThisFirst} headingId="do-this-first" />
+            <HabitsChecklist
+              habits={habitsState}
+              onToggle={toggleHabit}
+              getScoreText={(nextDone) => habitsScoreText(nextDone)}
+            />
+          </div>
+
 
           {/* Explore more tools — result-relevant, below the next steps */}
           <div className="mx-auto mt-8 max-w-3xl">

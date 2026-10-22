@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { normalizeAnalytics, parseBreach, splitList, yearOf } from "../lib/breach.js";
+import {
+  normalizeAnalytics,
+  parseBreach,
+  splitList,
+  yearOf,
+  parseDataTypeCounts,
+  parsePasswordStrength,
+} from "../lib/breach.js";
 
 describe("splitList", () => {
   it("splits on semicolons and trims, dropping empties", () => {
@@ -91,10 +98,93 @@ describe("normalizeAnalytics", () => {
     expect(normalizeAnalytics({}).found).toBe(false);
   });
 
+  it("counts a paste-only result as found when the API reports a paste counter", () => {
+    const out = normalizeAnalytics({ PastesSummary: { cnt: 2 } });
+    expect(out.found).toBe(true);
+    expect(out.breaches).toHaveLength(0);
+    expect(out.pasteCount).toBe(2);
+  });
+
+  it("does not count a missing paste counter as an exposure", () => {
+    expect(normalizeAnalytics({ PastesSummary: {} }).found).toBe(false);
+    expect(normalizeAnalytics({ PastesSummary: { cnt: 0 } }).found).toBe(false);
+  });
+
   it("never throws on malformed entries", () => {
     const out = normalizeAnalytics({
       ExposedBreaches: { breaches_details: [null, {}, { breach: "OK" }] },
     });
     expect(out.breaches.map((b) => b.name)).toEqual(["OK"]);
+  });
+});
+
+describe("parseDataTypeCounts", () => {
+  it("flattens the xposed_data tree into per-type breach counts", () => {
+    const tree = [
+      {
+        name: "data_Personal",
+        children: [
+          { name: "data_Passwords", value: 11 },
+          { name: "data_Email addresses", value: 22 },
+        ],
+      },
+    ];
+    expect(parseDataTypeCounts(tree)).toEqual({ Passwords: 11, "Email addresses": 22 });
+  });
+
+  it("ignores leaves without a usable count or name", () => {
+    const tree = [{ name: "data_Passwords" }, { value: 5 }, { name: "data_", value: 3 }, null];
+    expect(parseDataTypeCounts(tree)).toEqual({});
+  });
+
+  it("returns an empty object for a missing or malformed tree", () => {
+    expect(parseDataTypeCounts(null)).toEqual({});
+    expect(parseDataTypeCounts(undefined)).toEqual({});
+    expect(parseDataTypeCounts("nope")).toEqual({});
+  });
+});
+
+describe("parsePasswordStrength", () => {
+  it("accepts the object form and keeps the buckets", () => {
+    expect(parsePasswordStrength({ PlainText: 11, EasyToCrack: 15, StrongHash: 15, Unknown: 22 })).toEqual({
+      plaintext: 11,
+      easyToCrack: 15,
+      strongHash: 15,
+      unknown: 22,
+    });
+  });
+
+  it("accepts the one-item array form", () => {
+    expect(parsePasswordStrength([{ PlainText: 1 }])).toMatchObject({ plaintext: 1 });
+  });
+
+  it("returns null when the API omits the breakdown", () => {
+    expect(parsePasswordStrength(null)).toBe(null);
+    expect(parsePasswordStrength(undefined)).toBe(null);
+    expect(parsePasswordStrength("nope")).toBe(null);
+    expect(parsePasswordStrength({})).toBe(null);
+  });
+});
+
+describe("normalizeAnalytics — API metrics", () => {
+  it("carries the API's data-type counts, password breakdown and paste counter", () => {
+    const out = normalizeAnalytics({
+      ExposedBreaches: { breaches_details: [{ breach: "Alpha", xposed_date: "2012" }] },
+      BreachMetrics: {
+        xposed_data: [{ name: "data_Group", children: [{ name: "data_Passwords", value: 3 }] }],
+        passwords_strength: { PlainText: 2, EasyToCrack: 1 },
+      },
+      PastesSummary: { cnt: 4 },
+    });
+    expect(out.dataTypeCounts).toEqual({ Passwords: 3 });
+    expect(out.passwordStrength).toMatchObject({ plaintext: 2, easyToCrack: 1 });
+    expect(out.pasteCount).toBe(4);
+  });
+
+  it("defaults the metrics to empty when the API omits them", () => {
+    const out = normalizeAnalytics({});
+    expect(out.dataTypeCounts).toEqual({});
+    expect(out.passwordStrength).toBe(null);
+    expect(out.pasteCount).toBe(null);
   });
 });

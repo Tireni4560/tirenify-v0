@@ -1,6 +1,7 @@
 // Overall risk level calculation — unit-tested in tests/risk.test.js.
 // Deliberately transparent: the UI shows the same breakdown we compute here.
 import { classifyDataType, SEVERITY_RANK } from "./severity.js";
+import { countPastes } from "./result-copy.js";
 
 const LEVELS = [
   { min: 80, level: "Critical" },
@@ -73,10 +74,14 @@ export function scoreBreachResult(result) {
         : "Passwords exposed in strong hashes";
     factors.push({ label, points: passwordPoints });
   }
-  if ((result?.pastes || []).length > 0) {
+  // Exposed pastes — the API's paste counter is authoritative (a missing or
+  // malformed counter falls back to the paste list the API returned), so the
+  // risk score never claims "no paste exposure" just because the list is empty.
+  const pasteCount = countPastes(result);
+  if (pasteCount > 0) {
     factors.push({
-      label: `Appears in ${result.pastes.length} paste${result.pastes.length === 1 ? "" : "s"}`,
-      points: result.pastes.length * 6,
+      label: `Appears in ${pasteCount} public paste${pasteCount === 1 ? "" : "s"}`,
+      points: pasteCount * 6,
     });
   }
 

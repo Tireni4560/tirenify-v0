@@ -17,17 +17,21 @@ function hasType(types, re) {
 }
 
 /**
- * @param {{types?: string[], count?: number|null, doneHabits?: number[]}} input
+ * @param {{types?: string[], count?: number|null, pasteCount?: number|null,
+ *          doneHabits?: number[]}} input
  *   types  — exposed data-type labels (from the full result or the masked
  *            summary); matched case-insensitively.
  *   count  — number of breaches found (0 = "none found", null = unknown).
+ *   pasteCount — number of public paste exposures the API confirmed
+ *            (0 = none, null = the API did not report a counter). A paste
+ *            exposure is NOT a breach, so it gets its own remediation.
  *   doneHabits — ticked habit indexes from the shared habits store; the
  *            "2fa" row is skipped when HABIT_2FA_INDEX is ticked so a
  *            completed habit never shows as a pending action.
  * @returns {Array<{id:string, title:string, reason:string, to:string}>}
  *   Up to 3 actions, every `to` a live route.
  */
-export function getDoThisFirst({ types = [], count = null, doneHabits = [] } = {}) {
+export function getDoThisFirst({ types = [], count = null, pasteCount = null, doneHabits = [] } = {}) {
   const actions = [];
   const skipped = [];
   const push = (id, title, reason, to, habitIndex = null) => {
@@ -43,6 +47,34 @@ export function getDoThisFirst({ types = [], count = null, doneHabits = [] } = {
 
   const noneFound = count === 0;
   const breaches = count === null ? types.length > 0 : count > 0;
+  // The API's paste counter is authoritative; a missing/invalid counter means
+  // "unknown", never "zero exposures".
+  const pastes = Number.isFinite(Number(pasteCount)) && Number(pasteCount) > 0 ? Number(pasteCount) : 0;
+
+  // Paste-only result: the email was not in a breach, but it is public on
+  // paste sites. Remediation must talk about pastes, not breaches.
+  if (noneFound && pastes > 0) {
+    push(
+      "paste-remove",
+      "Remove the public paste if you can",
+      `${pastes} public paste${pastes === 1 ? "" : "s"} exposed this email — the text is public and may still be indexed.`,
+      "/tools/leak-safety-guide",
+    );
+    push(
+      "paste-pw-gen",
+      "Change any password that appeared in the paste",
+      "Text posted publicly can be copied — replace every password that was in it.",
+      "/tools/password-generator",
+    );
+    push(
+      "paste-2fa",
+      "Turn on two-factor authentication",
+      "A second step protects accounts even if a pasted password is reused.",
+      "/learn/setup-2fa",
+      HABIT_2FA_INDEX,
+    );
+    return actions.slice(0, 3);
+  }
 
   if (noneFound) {
     // Good news — but "no breaches found" is not proof of safety, so finish

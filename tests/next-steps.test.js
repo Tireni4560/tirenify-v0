@@ -108,4 +108,59 @@ describe("getDoThisFirst", () => {
     expect(clean.map((a) => a.to)).toEqual(["/"]);
     expectLive(clean);
   });
+
+  it("paste-only result -> paste remediation, not the clean-check advice", () => {
+    const actions = getDoThisFirst({ types: [], count: 0, pasteCount: 2 });
+    expect(actions.map((a) => a.to)).toEqual([
+      "/tools/leak-safety-guide",
+      "/tools/password-generator",
+      "/learn/setup-2fa",
+    ]);
+    expectLive(actions);
+    // The reasons talk about pastes, and never claim the user is safe.
+    for (const a of actions) {
+      expect(a.reason).not.toMatch(/\bsafe\b|\bsecure\b/i);
+    }
+    expect(actions[0].reason).toMatch(/2 public pastes/i);
+  });
+
+  it("uses the singular for one paste exposure", () => {
+    const actions = getDoThisFirst({ types: [], count: 0, pasteCount: 1 });
+    expect(actions[0].reason).toMatch(/1 public paste exposed/i);
+  });
+
+  it("hides the paste 2FA action when the 2FA habit is already ticked", () => {
+    const actions = getDoThisFirst({
+      types: [],
+      count: 0,
+      pasteCount: 2,
+      doneHabits: [HABIT_2FA_INDEX],
+    });
+    expect(actions.map((a) => a.to)).toEqual([
+      "/tools/leak-safety-guide",
+      "/tools/password-generator",
+    ]);
+    expectLive(actions);
+  });
+
+  it("treats a missing or invalid paste counter as no paste exposure", () => {
+    for (const bad of [null, undefined, "", "nope", NaN, -1]) {
+      const actions = getDoThisFirst({ types: [], count: 0, pasteCount: bad });
+      expect(actions.map((a) => a.to)).toEqual(["/", "/learn/setup-2fa"]);
+    }
+  });
+
+  it("keeps the breach remediation when breaches AND pastes are present", () => {
+    const actions = getDoThisFirst({
+      types: ["Passwords"],
+      count: 2,
+      pasteCount: 3,
+    });
+    expect(actions.map((a) => a.to)).toEqual([
+      "/tools/password-generator",
+      "/tools/password-strength",
+      "/learn/setup-2fa",
+    ]);
+    expectLive(actions);
+  });
 });

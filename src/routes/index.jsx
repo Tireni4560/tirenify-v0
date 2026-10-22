@@ -15,6 +15,7 @@ import { getBreachHistory, clearAllSafeyardData, useSafeyardDataVersion } from "
 import { useCheckSession, clearCheckSession, computeSecurityScore } from "../lib/check-session.js";
 import { useHabits, doneHabitIndexes } from "../lib/habits-store.js";
 import { getDoThisFirst } from "../lib/next-steps.js";
+import { getResultStatus, countPastes } from "../lib/result-copy.js";
 import { selectFeaturedTools } from "../content/tools.js";
 import { classifyDataType } from "../lib/severity.js";
 import { PRODUCT_NAME, PRODUCT_FULL, TAGLINE } from "../config/brand.js";
@@ -49,6 +50,7 @@ export default function Dashboard() {
         masked: session.masked,
         count: session.result.breaches.length,
         types,
+        pasteCount: countPastes(session.result),
         risk: null, // in-session risk reads via the score card; stored rows keep their label
         at: session.checkedAt,
         live: true,
@@ -59,6 +61,7 @@ export default function Dashboard() {
         masked: latest.masked,
         count: latest.count,
         types: latest.types || [],
+        pasteCount: latest.pasteCount,
         risk: latest.risk || null,
         at: latest.at,
         live: false,
@@ -73,6 +76,7 @@ export default function Dashboard() {
         ? getDoThisFirst({
             types: latestCheck.types,
             count: latestCheck.count,
+            pasteCount: latestCheck.pasteCount,
             doneHabits: doneHabitIndexes(habits),
           })
         : [],
@@ -80,6 +84,20 @@ export default function Dashboard() {
   );
 
   const featuredTools = useMemo(() => selectFeaturedTools({ limit: 6 }), []);
+
+  // Same copy source as Breach Guard, so the dashboard and the results page
+  // never contradict each other.
+  const latestStatus = useMemo(
+    // Use the full in-session result when we have it (so a paste-only check is
+    // described honestly), otherwise the masked summary count + paste counter.
+    () =>
+      session?.result
+        ? getResultStatus(session.result)
+        : latestCheck
+          ? getResultStatus({ count: latestCheck.count, pasteCount: latestCheck.pasteCount })
+          : null,
+    [session, latestCheck],
+  );
 
   /** Live-region text for a habit tick: "... Safety habits N of 4. Score S." */
   const habitsScoreText = useMemo(
@@ -111,10 +129,15 @@ export default function Dashboard() {
       />
 
       <section className="surface mx-auto max-w-3xl p-6" aria-label="Start here">
-        <h2 className="text-lg font-semibold">Know before they do</h2>
+        <h2 className="text-lg font-semibold">Know what was exposed — and what to do next</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Check whether your email appeared in known data breaches, then work through the steps
-          below at your own pace — each one links to a tool or guide that works right now.
+          Breach Guard checks your email against a breach database and shows exactly which known
+          breaches included it and what each one exposed. You get plain-language steps for what to
+          change first — no account needed, and nothing you type is uploaded.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          It covers publicly known breaches only, so a clean check is good news — not proof that you
+          were never exposed.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
@@ -141,16 +164,38 @@ export default function Dashboard() {
           <h2 className="text-base font-semibold">Latest check</h2>
           {latestCheck ? (
             <div className="mt-2">
-              <p className="font-display text-4xl font-bold">
-                {latestCheck.count}
-                <span className="ml-2 align-middle text-base font-semibold text-muted-foreground">
-                  breach{latestCheck.count === 1 ? "" : "es"} found
-                </span>
-              </p>
+              <Chip
+                className={
+                  latestStatus?.tone === "hit"
+                    ? "bg-destructive/15 text-destructive border-destructive/30"
+                    : latestStatus?.tone === "paste"
+                      ? "bg-warning/15 text-warning border-warning/30"
+                      : "bg-success/15 text-success border-success/30"
+                }
+              >
+                {latestStatus?.chip}
+              </Chip>
+              {latestCheck.count > 0 ? (
+                <p className="mt-2 font-display text-4xl font-bold">
+                  {latestCheck.count}
+                  <span className="ml-2 align-middle text-base font-semibold text-muted-foreground">
+                    known breach{latestCheck.count === 1 ? "" : "es"}
+                  </span>
+                </p>
+              ) : (
+                <p className="mt-2 font-display text-2xl font-bold">
+                  {latestStatus?.headline || "No breaches found for this email"}
+                </p>
+              )}
               <p className="mt-1 text-sm text-muted-foreground">
                 {latestCheck.masked} · {new Date(latestCheck.at).toLocaleDateString()}
                 {latestCheck.risk ? ` · Risk: ${latestCheck.risk}` : ""}
               </p>
+              <p className="mt-2 text-sm text-muted-foreground">{latestStatus?.subhead}</p>
+              {/* A clean result is never sold as proof of safety. */}
+              {latestStatus?.tone !== "hit" && (
+                <p className="mt-2 text-sm text-muted-foreground">{latestStatus?.qualifier}</p>
+              )}
               {latestCheck.types.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {latestCheck.types.slice(0, 8).map((raw) => {
@@ -214,6 +259,9 @@ export default function Dashboard() {
                 <li key={i} className="flex justify-between gap-3">
                   <span>
                     {r.masked} — {r.count} breach{r.count === 1 ? "" : "es"}
+                    {Number(r.pasteCount) > 0
+                      ? ` · ${r.pasteCount} public paste${r.pasteCount === 1 ? "" : "s"}`
+                      : ""}
                   </span>
                   <span className="text-muted-foreground">{new Date(r.at).toLocaleDateString()}</span>
                 </li>

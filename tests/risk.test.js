@@ -82,4 +82,32 @@ describe("scoreBreachResult", () => {
     expect(r.score).toBeGreaterThanOrEqual(0);
     expect(r.level).toBeTruthy();
   });
+
+  it("scores a paste-only exposure from the API paste counter", () => {
+    const r = scoreBreachResult({
+      breaches: [],
+      pastes: [],
+      pasteCount: 3,
+    });
+    expect(r.score).toBe(18);
+    expect(r.level).toBe("Low");
+    expect(r.factors.some((f) => /3 public pastes/i.test(f.label))).toBe(true);
+  });
+
+  it("falls back to the paste list when the API counter is missing", () => {
+    const r = scoreBreachResult({
+      breaches: [],
+      pastes: [{ title: "a" }, { title: "b" }],
+      pasteCount: null,
+    });
+    expect(r.score).toBe(12);
+    expect(r.factors.some((f) => /2 public pastes/i.test(f.label))).toBe(true);
+  });
+
+  it("never reports a paste exposure of zero when the counter is invalid", () => {
+    for (const bad of [null, undefined, "", "nope", NaN, Infinity, -2]) {
+      const r = scoreBreachResult({ breaches: [], pastes: [{ title: "a" }], pasteCount: bad });
+      expect(r.score).toBe(6);
+    }
+  });
 });
